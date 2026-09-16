@@ -22,8 +22,10 @@ final class MockFocusPort: FocusPort {
         self.focusedResults = focusedResults
     }
 
+    /// Consumes scripted values; the last value sticks once the script is exhausted.
     private func pop<T>(_ array: inout [T], default value: T) -> T {
-        array.isEmpty ? value : array.removeFirst()
+        if array.isEmpty { return value }
+        return array.count == 1 ? array[0] : array.removeFirst()
     }
 
     func probe(_ id: WindowSessionID) -> FocusProbe { calls.append("probe"); return pop(&probeResults, default: .alive(pid: targetPid)) }
@@ -82,9 +84,10 @@ struct FocusServiceTests {
     @Test("retries exactly once when verification fails")
     @AXActor func singleRetry() async {
         // frontmost never becomes the target; focus never confirms.
-        let port = MockFocusPort(frontmost: Array(repeating: 77, count: 100), focusedResults: Array(repeating: false, count: 100))
+        let port = MockFocusPort(frontmost: [77], focusedResults: [false])
         let service = FocusService(port: port)
         service.verificationAttempts = 2
+        service.lateConfirmationAttempts = 2
         let outcome = await service.focus(WindowSessionID())
         #expect(port.calls.filter { $0 == "activate" }.count == 2)
         #expect(outcome == .failed(.activationRejected))
@@ -93,7 +96,7 @@ struct FocusServiceTests {
     @Test("aborts instead of retrying when the user switched to a third app")
     @AXActor func abortOnUserSwitch() async {
         // baseline frontmost 77 (before), then during verification 77, then after first attempt the user is on 99.
-        let port = MockFocusPort(frontmost: [77, 77, 77, 77, 99], focusedResults: Array(repeating: false, count: 100))
+        let port = MockFocusPort(frontmost: [77, 77, 77, 99], focusedResults: [false])
         let service = FocusService(port: port)
         service.verificationAttempts = 1
         let outcome = await service.focus(WindowSessionID())
@@ -103,7 +106,7 @@ struct FocusServiceTests {
 
     @Test("unsupported focus attribute falls back to main-window confirmation")
     @AXActor func unverifiedFallback() async {
-        let port = MockFocusPort(frontmost: [500], focusedResults: Array(repeating: nil, count: 100))
+        let port = MockFocusPort(frontmost: [500], focusedResults: [nil])
         port.mainResult = true
         let service = FocusService(port: port)
         let outcome = await service.focus(WindowSessionID())
@@ -112,11 +115,35 @@ struct FocusServiceTests {
 
     @Test("raise failure while frontmost reports a raise problem")
     @AXActor func raiseFailure() async {
-        let port = MockFocusPort(frontmost: Array(repeating: 500, count: 100), focusedResults: Array(repeating: false, count: 100))
+        let port = MockFocusPort(frontmost: [500], focusedResults: [false])
         port.raiseResult = false
+        port.mainResult = false
         let service = FocusService(port: port)
         service.verificationAttempts = 1
+        service.lateConfirmationAttempts = 1
         let outcome = await service.focus(WindowSessionID())
         #expect(outcome == .failed(.raiseFailed))
+    }
+
+    @Test("a slow activation that lands after the retries is reported as success, not failure")
+    @AXActor func lateActivation() async {
+        // Frontmost stays elsewhere through both attempts, then flips to the target.
+        let port = MockFocusPort(frontmost: [77, 77, 77, 77, 77, 77, 77, 77, 500], focusedResults: [true])
+        let service = FocusService(port: port)
+        service.verificationAttempts = 1
+        service.lateConfirmationAttempts = 5
+        let outcome = await service.focus(WindowSessionID())
+        #expect(outcome == .verified)
+    }
+
+    @Test("frontmost app with the target as main window counts as success when focus is unreported")
+    @AXActor func mainWindowFallback() async {
+        let port = MockFocusPort(frontmost: [500], focusedResults: [false])
+        port.mainResult = true
+        let service = FocusService(port: port)
+        service.verificationAttempts = 1
+        service.lateConfirmationAttempts = 1
+        let outcome = await service.focus(WindowSessionID())
+        if case .unverified = outcome {} else { Issue.record("expected unverified, got \(outcome)") }
     }
 }

@@ -427,8 +427,13 @@ final class AXWorker {
     private func buildSnapshot() -> DiscoverySnapshot {
         var processes: [ProcessInstanceKey: ProcessSnapshot] = [:]
         var windows: [WindowSnapshot] = []
+        // The AX system-wide focused application is the freshest "active app" signal; the
+        // NSWorkspace value can lag behind the switch by a scan interval.
+        let frontmost = frontmostProcessID()
         for session in sessions.values {
-            processes[session.key] = session.info
+            var info = session.info
+            if let frontmost { info.isActive = session.key.pid == frontmost }
+            processes[session.key] = info
             windows.append(contentsOf: session.tracker.snapshots)
         }
         windows.sort { $0.firstSeenSequence < $1.firstSeenSequence }

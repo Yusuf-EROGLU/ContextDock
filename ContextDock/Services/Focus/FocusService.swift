@@ -44,9 +44,13 @@ final class FocusService {
     private var requestCounter: UInt64 = 0
     private var latestRequest: UInt64 = 0
 
-    var verificationAttempts = 8
+    var verificationAttempts = 12
     var verificationInterval: Duration = .milliseconds(50)
     var unminimizeAttempts = 6
+    /// After both attempts failed, keep watching this many intervals for a late activation
+    /// (Electron apps such as Slack can take well over half a second to come forward).
+    var lateConfirmationAttempts = 10
+    var lateConfirmationInterval: Duration = .milliseconds(100)
 
     nonisolated init(port: any FocusPort) {
         self.port = port
@@ -73,8 +77,11 @@ final class FocusService {
         while true {
             attempt += 1
             let outcome = await attemptOnce(id: id, pid: pid)
-            if outcome.isSuccess || attempt >= 2 {
+            if outcome.isSuccess {
                 return outcome
+            }
+            if attempt >= 2 {
+                return await lateConfirmation(id: id, pid: pid, request: request, fallback: outcome)
             }
             guard latestRequest == request else {
                 return .aborted("Superseded by a newer request")
@@ -126,33 +133,52 @@ final class FocusService {
             port.setApplicationFrontmost(pid)
         }
 
-        var sawMain = false
-        var focusUnsupported = false
+        _ = activated
+        _ = raised
         for _ in 0..<verificationAttempts {
-            let front = port.frontmostProcessID()
-            let focused = port.windowIsFocused(id)
-            if front == pid, focused == true {
-                return .verified
-            }
-            if focused == nil {
-                focusUnsupported = true
-                if front == pid, port.windowIsMain(id) == true {
-                    sawMain = true
-                    break
-                }
+            if let outcome = verify(id: id, pid: pid) {
+                return outcome
             }
             await port.sleep(for: verificationInterval)
         }
 
-        if sawMain {
-            return .unverified("Window is main; focus could not be confirmed")
-        }
-        if focusUnsupported, port.frontmostProcessID() == pid, raised {
-            return .unverified("Application does not report window focus")
-        }
         if port.frontmostProcessID() != pid {
-            return .failed(activated || raised ? .activationRejected : .activationRejected)
+            return .failed(.activationRejected)
         }
         return .failed(.raiseFailed)
+    }
+
+    /// One verification probe. `nil` means "not yet"; keep polling.
+    private func verify(id: WindowSessionID, pid: pid_t) -> FocusOutcome? {
+        guard port.frontmostProcessID() == pid else { return nil }
+        switch port.windowIsFocused(id) {
+        case .some(true):
+            return .verified
+        case .none:
+            // The app does not report a focused window; being frontmost with the target as
+            // main window is the best confirmation available.
+            if port.windowIsMain(id) == true {
+                return .unverified("Application does not report window focus")
+            }
+            return nil
+        case .some(false):
+            return nil
+        }
+    }
+
+    /// The target apps may come forward after our verification window closed. Wait a little
+    /// longer before reporting a failure so a slow but successful switch is not flagged.
+    private func lateConfirmation(id: WindowSessionID, pid: pid_t, request: UInt64, fallback: FocusOutcome) async -> FocusOutcome {
+        for _ in 0..<lateConfirmationAttempts {
+            guard latestRequest == request else { return .aborted("Superseded by a newer request") }
+            if let outcome = verify(id: id, pid: pid) {
+                return outcome == .verified ? .verified : outcome
+            }
+            if port.frontmostProcessID() == pid, port.windowIsMain(id) == true {
+                return .unverified("Window is main; focus could not be confirmed")
+            }
+            await port.sleep(for: lateConfirmationInterval)
+        }
+        return fallback
     }
 }

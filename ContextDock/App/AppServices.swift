@@ -58,6 +58,7 @@ final class AppServices {
             for await snapshot in worker.snapshots {
                 store.apply(snapshot)
                 self?.handlePermissionChange(snapshot.permission)
+                self?.clearStaleHover()
             }
         }
         let showAux = preferences.showAuxiliaryWindows
@@ -152,6 +153,7 @@ final class AppServices {
             NSWorkspace.didLaunchApplicationNotification,
             NSWorkspace.didTerminateApplicationNotification,
             NSWorkspace.didActivateApplicationNotification,
+            NSWorkspace.didDeactivateApplicationNotification,
             NSWorkspace.didHideApplicationNotification,
             NSWorkspace.didUnhideApplicationNotification,
             NSWorkspace.activeSpaceDidChangeNotification,
@@ -223,6 +225,15 @@ final class AppServices {
             break
         }
         panelController.relayout()
+    }
+
+    /// A hover highlight can outlive the pointer when the target app comes forward over the
+    /// bar; drop it whenever the pointer is no longer inside the bar.
+    private func clearStaleHover() {
+        guard barState.hoveredItem != nil, barState.drag == nil else { return }
+        if !panelController.window.frame.contains(NSEvent.mouseLocation) {
+            barState.hoveredItem = nil
+        }
     }
 
     // MARK: - Actions

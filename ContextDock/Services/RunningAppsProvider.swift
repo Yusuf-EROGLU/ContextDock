@@ -10,6 +10,7 @@ final class RunningAppsProvider {
 
     func descriptors() -> [AppDescriptor] {
         let ownPid = ProcessInfo.processInfo.processIdentifier
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
         return NSWorkspace.shared.runningApplications.compactMap { app in
             guard app.activationPolicy == .regular,
                   app.processIdentifier != ownPid,
@@ -20,7 +21,7 @@ final class RunningAppsProvider {
                 localizedName: app.localizedName ?? app.bundleIdentifier ?? "Unknown",
                 launchDate: app.launchDate,
                 isHidden: app.isHidden,
-                isActive: app.isActive
+                isActive: app.processIdentifier == frontmost
             )
         }
     }
