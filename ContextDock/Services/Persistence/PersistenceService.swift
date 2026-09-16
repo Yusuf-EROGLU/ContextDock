@@ -22,7 +22,7 @@ enum PersistenceStatus: Sendable, Equatable {
 @MainActor
 @Observable
 final class PersistenceService {
-    static let applicationSupportDirectory: URL = {
+    nonisolated static let applicationSupportDirectory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("ContextDock", isDirectory: true)

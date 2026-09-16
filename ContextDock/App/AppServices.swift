@@ -28,6 +28,8 @@ final class AppServices {
     private let hotkeyRegistrar = CarbonHotkeyRegistrar()
     private(set) lazy var hotkeyModel = HotkeyModel(registrar: hotkeyRegistrar, persistence: persistence)
     private var knownProcessKeys: Set<ProcessInstanceKey> = []
+    // M3: optional Unity Editor bridge heartbeats.
+    private(set) lazy var unityBridge = UnityBridgeMonitor(store: store)
 
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
@@ -76,6 +78,7 @@ final class AppServices {
         }
         gitScheduler.setBarVisible(preferences.barVisible)
         gitScheduler.start()
+        unityBridge.start()
         hotkeyModel.registerSaved()
         Log.app.info("ContextDock started")
     }
