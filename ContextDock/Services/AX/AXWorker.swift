@@ -30,22 +30,6 @@ final class AXWorker {
         var notificationDebounce: Duration = .milliseconds(150)
         var titleDebounce: Duration = .milliseconds(100)
         var elementTimeoutSeconds: Float = 1.0
-        var missedScansBeforeProbe = 2
-    }
-
-    fileprivate struct WindowAttributes {
-        var role: String?
-        var subrole: String?
-        var title: String?
-        var isMinimized: Bool
-        var isMain: Bool
-    }
-
-    fileprivate struct TrackedWindow {
-        let id: WindowSessionID
-        let element: AXUIElement
-        var snapshot: WindowSnapshot
-        var missedScans: Int
     }
 
     fileprivate struct AppSession {
@@ -55,7 +39,7 @@ final class AXWorker {
         var launchDate: Date?
         var observer: AXObserverHandle?
         var appToken: AXObservationToken?
-        var windows: [WindowSessionID: TrackedWindow]
+        var tracker: WindowTracker<AXUIElement>
         var consecutiveFailures: Int
     }
 
@@ -76,8 +60,7 @@ final class AXWorker {
 
     private var sessions: [ProcessInstanceKey: AppSession] = [:]
     private var windowIndex: [WindowSessionID: ProcessInstanceKey] = [:]
-    private var pidKeys: [pid_t: ProcessInstanceKey] = [:]
-    private var generationCounter: UInt64 = 0
+    private var keyResolver = ProcessInstanceKeyResolver()
     private var sequenceCounter: UInt64 = 0
 
     private var mode: Mode = .active
@@ -170,7 +153,12 @@ final class AXWorker {
 
         var seen = Set<ProcessInstanceKey>()
         for app in apps {
-            let key = processKey(for: app)
+            let resolution = keyResolver.resolve(pid: app.pid, launchDate: app.launchDate)
+            if let replaced = resolution.replaced {
+                // Same pid, different start time: a new process reused the pid.
+                teardownSession(replaced)
+            }
+            let key = resolution.key
             seen.insert(key)
             if var session = sessions[key] {
                 session.info.isHidden = app.isHidden
@@ -187,35 +175,11 @@ final class AXWorker {
         for key in Array(sessions.keys) where !seen.contains(key) {
             teardownSession(key)
         }
-        for (pid, key) in pidKeys where !seen.contains(key) {
-            pidKeys[pid] = nil
+        for key in keyResolver.knownKeys where !seen.contains(key) {
+            keyResolver.forget(key)
         }
 
         emit(force: regained)
-    }
-
-    private func processKey(for app: AppDescriptor) -> ProcessInstanceKey {
-        let kernelStart = ProcessStartTime.unixMilliseconds(pid: app.pid, launchDate: app.launchDate)
-        if let existing = pidKeys[app.pid] {
-            switch (existing.start, kernelStart) {
-            case (.unixMilliseconds(let known), .some(let current)) where known == current:
-                return existing
-            case (.generation, .none):
-                return existing
-            default:
-                // Same pid, different start: the pid was reused by a new process.
-                teardownSession(existing)
-            }
-        }
-        let key: ProcessInstanceKey
-        if let kernelStart {
-            key = ProcessInstanceKey(pid: app.pid, start: .unixMilliseconds(kernelStart))
-        } else {
-            generationCounter += 1
-            key = ProcessInstanceKey(pid: app.pid, start: .generation(generationCounter))
-        }
-        pidKeys[app.pid] = key
-        return key
     }
 
     private func makeSession(key: ProcessInstanceKey, app: AppDescriptor) -> AppSession {
@@ -236,34 +200,36 @@ final class AXWorker {
             launchDate: app.launchDate,
             observer: nil,
             appToken: nil,
-            windows: [:],
+            tracker: WindowTracker(process: key),
             consecutiveFailures: 0
         )
         if let observer = AXObserverHandle(pid: key.pid) {
             let token = AXObservationToken(process: key, window: nil, worker: self)
-            for name in AXNotificationName.applicationLevel + [AXNotificationName.windowMiniaturized, AXNotificationName.windowDeminiaturized] {
+            let names = AXNotificationName.applicationLevel + [AXNotificationName.windowMiniaturized, AXNotificationName.windowDeminiaturized]
+            for name in names {
                 observer.add(name, to: element, token: token)
             }
             session.observer = observer
             session.appToken = token
         }
         if Log.verbose {
-            Log.ax.debug("Tracking \(app.localizedName, privacy: .public) pid=\(key.pid)")
+            let name = app.localizedName
+            let pid = key.pid
+            Log.ax.debug("Tracking \(name, privacy: .public) pid=\(pid)")
         }
         return session
     }
 
     private func teardownSession(_ key: ProcessInstanceKey) {
-        guard let session = sessions.removeValue(forKey: key) else { return }
+        guard var session = sessions.removeValue(forKey: key) else { return }
         session.observer?.invalidate()
-        for id in session.windows.keys {
+        for id in session.tracker.removeAll() {
             windowIndex[id] = nil
+            debouncer.cancel(.title(id))
         }
         debouncer.cancel(.rescan(key))
         debouncer.cancel(.focus(key))
-        if pidKeys[key.pid] == key {
-            pidKeys[key.pid] = nil
-        }
+        keyResolver.forget(key)
     }
 
     private func teardownAllSessions() {
@@ -271,12 +237,13 @@ final class AXWorker {
             teardownSession(key)
         }
         windowIndex.removeAll()
-        pidKeys.removeAll()
+        keyResolver.forgetAll()
     }
 
     // MARK: - Scanning
 
     private func scan(_ session: inout AppSession) {
+        let input: WindowTracker<AXUIElement>.ScanInput
         switch AXElement.elements(session.element, kAXWindowsAttribute as String) {
         case .failure(let failure):
             if failure == .notTrusted {
@@ -284,7 +251,7 @@ final class AXWorker {
                 return
             }
             session.consecutiveFailures += 1
-            markStale(&session)
+            input = .failure
             if Log.verbose {
                 let pid = session.key.pid
                 let description = String(describing: failure)
@@ -297,7 +264,7 @@ final class AXWorker {
                 switch readAttributes(element) {
                 case .failure(.notResponding):
                     session.consecutiveFailures += 1
-                    markStale(&session)
+                    _ = session.tracker.apply(.failure, nextSequence: { 0 }, probe: { _ in .alive })
                     return
                 case .failure(.notTrusted):
                     permissionLost()
@@ -311,44 +278,38 @@ final class AXWorker {
                 }
             }
             session.consecutiveFailures = 0
+            input = .success(fresh)
+        }
 
-            let tracked = session.windows.values
-                .sorted { $0.snapshot.firstSeenSequence < $1.snapshot.firstSeenSequence }
-                .map { (id: $0.id, element: $0.element) }
-            let outcome = WindowMatcher.match(tracked: tracked, fresh: fresh.map(\.element))
-
-            for (id, index) in outcome.matched {
-                guard var window = session.windows[id] else { continue }
-                apply(fresh[index].attributes, to: &window.snapshot)
-                window.snapshot.isStale = false
-                window.snapshot.listedByApplication = true
-                window.missedScans = 0
-                session.windows[id] = window
+        let changes = session.tracker.apply(
+            input,
+            nextSequence: { sequenceCounter += 1; return sequenceCounter },
+            probe: { element in
+                switch AXElement.string(element, kAXRoleAttribute as String) {
+                case .failure(.invalidElement): return .dead
+                case .failure(.notResponding): return .notResponding
+                default: return .alive
+                }
             }
+        )
 
-            for index in outcome.unmatchedFresh {
-                let entry = fresh[index]
-                let window = track(entry.element, attributes: entry.attributes, in: &session)
-                session.windows[window.id] = window
-            }
-
-            for id in outcome.missing {
-                guard var window = session.windows[id] else { continue }
-                window.missedScans += 1
-                if window.missedScans >= configuration.missedScansBeforeProbe {
-                    switch AXElement.string(window.element, kAXRoleAttribute as String) {
-                    case .failure(.invalidElement):
-                        untrack(id, in: &session)
-                        continue
-                    case .failure(.notResponding):
-                        window.snapshot.isStale = true
-                    default:
-                        window.snapshot.listedByApplication = false
+        for id in changes.added {
+            windowIndex[id] = session.key
+            if let element = session.tracker.element(for: id) {
+                AXElement.setTimeout(element, seconds: configuration.elementTimeoutSeconds)
+                if let observer = session.observer {
+                    let token = AXObservationToken(process: session.key, window: id, worker: self)
+                    for name in [AXNotificationName.titleChanged, AXNotificationName.elementDestroyed] {
+                        observer.add(name, to: element, token: token)
                     }
                 }
-                session.windows[id] = window
             }
+        }
+        for id in changes.removed {
+            forgetWindow(id, in: &session)
+        }
 
+        if case .success = input {
             refreshFocusFlags(&session)
         }
     }
@@ -377,64 +338,16 @@ final class AXWorker {
         return nil
     }
 
-    private func apply(_ attributes: WindowAttributes, to snapshot: inout WindowSnapshot) {
-        snapshot.role = attributes.role
-        snapshot.subrole = attributes.subrole
-        snapshot.title = attributes.title
-        snapshot.isMinimized = attributes.isMinimized
-        snapshot.isMain = attributes.isMain
-    }
-
-    private func track(_ element: AXUIElement, attributes: WindowAttributes, in session: inout AppSession) -> TrackedWindow {
-        sequenceCounter += 1
-        let id = WindowSessionID()
-        AXElement.setTimeout(element, seconds: configuration.elementTimeoutSeconds)
-        var snapshot = WindowSnapshot(
-            id: id,
-            process: session.key,
-            firstSeenSequence: sequenceCounter,
-            title: nil,
-            role: nil,
-            subrole: nil,
-            isMinimized: false,
-            isMain: false,
-            isFocused: false,
-            isStale: false,
-            listedByApplication: true
-        )
-        apply(attributes, to: &snapshot)
-        let window = TrackedWindow(id: id, element: element, snapshot: snapshot, missedScans: 0)
-        windowIndex[id] = session.key
-
-        if let observer = session.observer {
-            let token = AXObservationToken(process: session.key, window: id, worker: self)
-            for name in [AXNotificationName.titleChanged, AXNotificationName.elementDestroyed] {
-                observer.add(name, to: element, token: token)
-            }
-        }
-        return window
-    }
-
-    private func untrack(_ id: WindowSessionID, in session: inout AppSession) {
+    private func forgetWindow(_ id: WindowSessionID, in session: inout AppSession) {
         session.observer?.removeRegistrations(for: id)
-        session.windows[id] = nil
+        session.tracker.remove(id)
         windowIndex[id] = nil
         debouncer.cancel(.title(id))
     }
 
-    private func markStale(_ session: inout AppSession) {
-        for id in session.windows.keys {
-            session.windows[id]?.snapshot.isStale = true
-        }
-    }
-
     private func refreshFocusFlags(_ session: inout AppSession) {
         guard case .success(let focused) = AXElement.element(session.element, kAXFocusedWindowAttribute as String) else { return }
-        for id in session.windows.keys {
-            guard let window = session.windows[id] else { continue }
-            let isFocused = focused.map { AXElement.isSame($0, window.element) } ?? false
-            session.windows[id]?.snapshot.isFocused = isFocused
-        }
+        session.tracker.setFocused(focused)
     }
 
     private func permissionLost() {
@@ -453,7 +366,7 @@ final class AXWorker {
         switch notification {
         case AXNotificationName.elementDestroyed:
             guard let windowID = token.window, var session = sessions[key] else { return }
-            untrack(windowID, in: &session)
+            forgetWindow(windowID, in: &session)
             sessions[key] = session
             emit()
 
@@ -483,14 +396,12 @@ final class AXWorker {
     }
 
     private func refreshTitle(process key: ProcessInstanceKey, window id: WindowSessionID) {
-        guard var session = sessions[key], var window = session.windows[id] else { return }
-        switch AXElement.string(window.element, kAXTitleAttribute as String) {
+        guard var session = sessions[key], let element = session.tracker.element(for: id) else { return }
+        switch AXElement.string(element, kAXTitleAttribute as String) {
         case .success(let title):
-            window.snapshot.title = title
-            window.snapshot.isStale = false
-            session.windows[id] = window
+            session.tracker.updateTitle(id, title: title)
         case .failure(.invalidElement):
-            untrack(id, in: &session)
+            forgetWindow(id, in: &session)
         case .failure:
             break
         }
@@ -501,10 +412,10 @@ final class AXWorker {
     private func refreshFocus(process key: ProcessInstanceKey) {
         guard var session = sessions[key] else { return }
         refreshFocusFlags(&session)
-        for id in session.windows.keys {
-            guard let window = session.windows[id] else { continue }
-            if case .success(let main) = AXElement.bool(window.element, kAXMainAttribute as String) {
-                session.windows[id]?.snapshot.isMain = main ?? false
+        for snapshot in session.tracker.snapshots {
+            guard let element = session.tracker.element(for: snapshot.id) else { continue }
+            if case .success(let main) = AXElement.bool(element, kAXMainAttribute as String) {
+                session.tracker.updateMain(snapshot.id, isMain: main ?? false)
             }
         }
         sessions[key] = session
@@ -518,7 +429,7 @@ final class AXWorker {
         var windows: [WindowSnapshot] = []
         for session in sessions.values {
             processes[session.key] = session.info
-            windows.append(contentsOf: session.windows.values.map(\.snapshot))
+            windows.append(contentsOf: session.tracker.snapshots)
         }
         windows.sort { $0.firstSeenSequence < $1.firstSeenSequence }
         return DiscoverySnapshot(processes: processes, windows: windows, permission: permission, generatedAt: Date())
@@ -538,19 +449,19 @@ final class AXWorker {
 
     // MARK: - Lookup helpers used by the focus port
 
-    fileprivate func tracked(_ id: WindowSessionID) -> (session: AppSession, window: TrackedWindow)? {
-        guard let key = windowIndex[id], let session = sessions[key], let window = session.windows[id] else { return nil }
-        return (session, window)
+    fileprivate func tracked(_ id: WindowSessionID) -> (session: AppSession, element: AXUIElement)? {
+        guard let key = windowIndex[id], let session = sessions[key], let element = session.tracker.element(for: id) else { return nil }
+        return (session, element)
     }
 
     fileprivate func session(pid: pid_t) -> AppSession? {
-        guard let key = pidKeys[pid] else { return nil }
+        guard let key = keyResolver.key(forPid: pid) else { return nil }
         return sessions[key]
     }
 
     fileprivate func removeDeadWindow(_ id: WindowSessionID) {
         guard let key = windowIndex[id], var session = sessions[key] else { return }
-        untrack(id, in: &session)
+        forgetWindow(id, in: &session)
         sessions[key] = session
         emit()
     }
@@ -560,7 +471,7 @@ final class AXWorker {
 
 extension AXWorker: FocusPort {
     func probe(_ id: WindowSessionID) -> FocusProbe {
-        guard let (session, window) = tracked(id) else { return .windowGone }
+        guard let (session, element) = tracked(id) else { return .windowGone }
         let pid = session.key.pid
         if let expected = session.key.startUnixMilliseconds,
            let current = ProcessStartTime.unixMilliseconds(pid: pid, launchDate: session.launchDate),
@@ -569,7 +480,7 @@ extension AXWorker: FocusPort {
             emit()
             return .processGone
         }
-        switch AXElement.string(window.element, kAXRoleAttribute as String) {
+        switch AXElement.string(element, kAXRoleAttribute as String) {
         case .success:
             return .alive(pid: pid)
         case .failure(.invalidElement):
@@ -613,16 +524,16 @@ extension AXWorker: FocusPort {
     }
 
     func windowIsMinimized(_ id: WindowSessionID) -> Bool? {
-        guard let (_, window) = tracked(id) else { return nil }
-        if case .success(let minimized) = AXElement.bool(window.element, kAXMinimizedAttribute as String) {
+        guard let (_, element) = tracked(id) else { return nil }
+        if case .success(let minimized) = AXElement.bool(element, kAXMinimizedAttribute as String) {
             return minimized
         }
         return nil
     }
 
     func setWindowMinimized(_ id: WindowSessionID, _ minimized: Bool) -> Bool {
-        guard let (_, window) = tracked(id) else { return false }
-        if case .success = AXElement.setBool(window.element, kAXMinimizedAttribute as String, minimized) {
+        guard let (_, element) = tracked(id) else { return false }
+        if case .success = AXElement.setBool(element, kAXMinimizedAttribute as String, minimized) {
             return true
         }
         return false
@@ -642,45 +553,45 @@ extension AXWorker: FocusPort {
     }
 
     func raiseWindow(_ id: WindowSessionID) -> Bool {
-        guard let (_, window) = tracked(id) else { return false }
-        AXElement.setTimeout(window.element, seconds: 2.0)
-        defer { AXElement.setTimeout(window.element, seconds: configuration.elementTimeoutSeconds) }
-        if case .success = AXElement.perform(window.element, kAXRaiseAction as String) {
+        guard let (_, element) = tracked(id) else { return false }
+        AXElement.setTimeout(element, seconds: 2.0)
+        defer { AXElement.setTimeout(element, seconds: configuration.elementTimeoutSeconds) }
+        if case .success = AXElement.perform(element, kAXRaiseAction as String) {
             return true
         }
         return false
     }
 
     func setWindowMain(_ id: WindowSessionID) -> Bool {
-        guard let (_, window) = tracked(id) else { return false }
-        if case .success = AXElement.setBool(window.element, kAXMainAttribute as String, true) {
+        guard let (_, element) = tracked(id) else { return false }
+        if case .success = AXElement.setBool(element, kAXMainAttribute as String, true) {
             return true
         }
         return false
     }
 
     func setFocusedWindow(_ id: WindowSessionID) -> Bool {
-        guard let (session, window) = tracked(id) else { return false }
-        if case .success = AXElement.setElement(session.element, kAXFocusedWindowAttribute as String, window.element) {
+        guard let (session, element) = tracked(id) else { return false }
+        if case .success = AXElement.setElement(session.element, kAXFocusedWindowAttribute as String, element) {
             return true
         }
         return false
     }
 
     func windowIsFocused(_ id: WindowSessionID) -> Bool? {
-        guard let (session, window) = tracked(id) else { return nil }
+        guard let (session, element) = tracked(id) else { return nil }
         switch AXElement.element(session.element, kAXFocusedWindowAttribute as String) {
         case .success(let focused):
             guard let focused else { return false }
-            return AXElement.isSame(focused, window.element)
+            return AXElement.isSame(focused, element)
         case .failure:
             return nil
         }
     }
 
     func windowIsMain(_ id: WindowSessionID) -> Bool? {
-        guard let (_, window) = tracked(id) else { return nil }
-        if case .success(let main) = AXElement.bool(window.element, kAXMainAttribute as String) {
+        guard let (_, element) = tracked(id) else { return nil }
+        if case .success(let main) = AXElement.bool(element, kAXMainAttribute as String) {
             return main
         }
         return nil

@@ -1,18 +1,28 @@
 import AppKit
+import SwiftUI
 
-/// Composition root: creates the services and wires them together.
+/// Composition root: creates the services, the UI controllers and wires them together.
 @MainActor
 final class AppServices {
     let preferences = Preferences()
     let apps = RunningAppsProvider()
     let persistence = PersistenceService()
     let customizations = SessionCustomizationStore()
+    let barState = BarState()
     let store: WindowStore
     let worker: AXWorker
     let focus: FocusService
 
+    private(set) lazy var panelController = DockPanelController(store: store, barState: barState, preferences: preferences)
+    private(set) lazy var permissionWindow = PermissionWindowController(store: store)
+    private(set) lazy var settingsWindow = SettingsWindowController { [unowned self] in self.makeSettingsView() }
+    private let statusItem = StatusItemController()
+    private let popup = PopupPanelPresenter()
+    let cardActions: CardActions
+
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
+    private var didShowPermissionOnboarding = false
 
     init() {
         store = WindowStore(customizations: customizations, persistence: persistence, apps: apps)
@@ -24,26 +34,228 @@ final class AppServices {
         )
         worker = AXWorker(control: control)
         focus = FocusService(port: worker)
+        cardActions = CardActions(store: store, barState: barState, popup: popup)
     }
 
+    // MARK: - Lifecycle
+
     func start() {
+        wireStatusItem()
+        wirePanel()
+        wireStoreCallbacks()
+        observeWorkspace()
+        observePreferences()
+
         let worker = self.worker
         let store = self.store
-        snapshotTask = Task { @MainActor in
+        snapshotTask = Task { @MainActor [weak self] in
             for await snapshot in worker.snapshots {
                 store.apply(snapshot)
+                self?.handlePermissionChange(snapshot.permission)
             }
         }
+        let showAux = preferences.showAuxiliaryWindows
         Task { @AXActor in
-            worker.setShowAuxiliaryWindows(false)
+            worker.setShowAuxiliaryWindows(showAux)
             worker.start()
         }
+
+        if preferences.barVisible {
+            panelController.show()
+        }
+        Log.app.info("ContextDock started")
     }
 
     func shutdown() {
         snapshotTask?.cancel()
+        for observer in observers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            NotificationCenter.default.removeObserver(observer)
+        }
         persistence.flush()
         let worker = self.worker
         Task { @AXActor in worker.stop() }
+    }
+
+    // MARK: - Wiring
+
+    private func wireStatusItem() {
+        statusItem.isBarVisible = { [unowned self] in panelController.isShown }
+        statusItem.permissionState = { [unowned self] in store.permission }
+        statusItem.onToggleBar = { [unowned self] in
+            preferences.barVisible.toggle()
+        }
+        statusItem.onRefresh = { [unowned self] in refresh() }
+        statusItem.onSettings = { [unowned self] in settingsWindow.show() }
+        statusItem.onPermission = { [unowned self] in permissionWindow.show() }
+        statusItem.onQuit = { NSApp.terminate(nil) }
+    }
+
+    private func wirePanel() {
+        panelController.onActivate = { [unowned self] id in activate(id) }
+        panelController.onMenu = { [unowned self] id in
+            cardActions.menu(for: id, anchor: panelController.anchorRect(for: id))
+        }
+        panelController.onRequestPermission = { [unowned self] in
+            AXPermission.requestTrust()
+            permissionWindow.show()
+        }
+        permissionWindow.onRecheck = { [unowned self] in refresh() }
+    }
+
+    private func wireStoreCallbacks() {
+        store.onCardsChanged = { [unowned self] in
+            panelController.relayout()
+        }
+        store.onWindowsRemoved = { [unowned self] removed in
+            if let selected = barState.keyboardSelectedCard, removed.contains(selected) {
+                barState.keyboardSelectedCard = nil
+            }
+            if let hovered = barState.hoveredCard, removed.contains(hovered) {
+                barState.hoveredCard = nil
+            }
+            if let editing = cardActions.editingCard, removed.contains(editing) {
+                popup.dismiss()
+                barState.showToast("Window closed")
+            }
+        }
+    }
+
+    private func observeWorkspace() {
+        let center = NSWorkspace.shared.notificationCenter
+        let worker = self.worker
+        let reconcile: @Sendable (Notification) -> Void = { _ in
+            Task { @AXActor in worker.requestReconcile() }
+        }
+        for name in [
+            NSWorkspace.didLaunchApplicationNotification,
+            NSWorkspace.didTerminateApplicationNotification,
+            NSWorkspace.didActivateApplicationNotification,
+            NSWorkspace.didHideApplicationNotification,
+            NSWorkspace.didUnhideApplicationNotification,
+            NSWorkspace.activeSpaceDidChangeNotification,
+        ] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main, using: reconcile))
+        }
+        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            Task { @AXActor in worker.setMode(.paused) }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.applyWorkerMode() }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { _ in
+            Task { @AXActor in worker.setMode(.paused) }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.applyWorkerMode() }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.panelController.relayout() }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @AXActor in worker.requestReconcile(after: .zero) }
+        })
+    }
+
+    private func observePreferences() {
+        ObservationLoop.observe { [unowned self] in
+            let visible = preferences.barVisible
+            if visible != panelController.isShown {
+                visible ? panelController.show() : panelController.hide()
+            }
+            applyWorkerMode()
+        }
+        ObservationLoop.observe { [unowned self] in
+            _ = preferences.bottomMargin
+            _ = preferences.screenSelection
+            panelController.relayout()
+        }
+        ObservationLoop.observe { [unowned self] in
+            let show = preferences.showAuxiliaryWindows
+            let worker = self.worker
+            Task { @AXActor in worker.setShowAuxiliaryWindows(show) }
+        }
+    }
+
+    private func applyWorkerMode() {
+        let mode: AXWorker.Mode = preferences.barVisible ? .active : .hidden
+        let worker = self.worker
+        Task { @AXActor in worker.setMode(mode) }
+    }
+
+    private func handlePermissionChange(_ permission: PermissionState) {
+        switch permission {
+        case .denied:
+            if !didShowPermissionOnboarding {
+                didShowPermissionOnboarding = true
+                permissionWindow.show()
+            }
+        case .revoked:
+            barState.showToast("Accessibility permission was revoked")
+        case .granted:
+            permissionWindow.close()
+        case .unknown:
+            break
+        }
+        panelController.relayout()
+    }
+
+    // MARK: - Actions
+
+    func refresh() {
+        let worker = self.worker
+        Task { @AXActor in worker.requestReconcile(after: .zero) }
+    }
+
+    func activate(_ id: WindowSessionID) {
+        popup.dismiss()
+        let focus = self.focus
+        Task { @MainActor [weak self] in
+            let outcome = await focus.focus(id)
+            guard let self else { return }
+            switch outcome {
+            case .verified:
+                break
+            case .unverified(let note):
+                if Log.verbose { Log.focus.debug("Focus unverified: \(note, privacy: .public)") }
+            case .failed(let failure):
+                barState.showToast(failure.message)
+                if failure == .windowGone || failure == .processGone {
+                    refresh()
+                }
+            case .aborted(let reason):
+                if Log.verbose { Log.focus.debug("Focus aborted: \(reason, privacy: .public)") }
+            }
+        }
+    }
+
+    private func makeSettingsView() -> AnyView {
+        AnyView(SettingsView(
+            preferences: preferences,
+            store: store,
+            persistence: persistence,
+            onResetAll: { [unowned self] in confirmResetAll() },
+            onDeleteRule: { [unowned self] id in store.deleteRule(id: id) },
+            hotkeySection: nil
+        ))
+    }
+
+    private func confirmResetAll() {
+        let alert = NSAlert()
+        alert.messageText = "Reset all customizations?"
+        alert.informativeText = "Removes every session name, badge and attached folder. Optionally also deletes saved project rules."
+        alert.addButton(withTitle: "Reset Session Only")
+        alert.addButton(withTitle: "Reset Everything")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: store.resetAllCustomizations(includingRules: false)
+        case .alertSecondButtonReturn: store.resetAllCustomizations(includingRules: true)
+        default: break
+        }
     }
 }
