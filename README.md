@@ -1,10 +1,11 @@
 # ContextDock
 
 ContextDock is a small native macOS taskbar for people who run several windows of the same
-application at once, typically Unity Editor and Ghostty. Every **accessible top-level window**
-gets its own card with the app icon, a name you choose, an optional badge and color, and the
-Git branch of the project folder you attach. Clicking a card switches to **that window**, not
-just to the application.
+application at once, typically Unity Editor, Rider and Ghostty. Every **accessible top-level
+window** gets its own card with the app icon, a name you choose and an optional badge and
+color. Cards that belong to one task can be **stacked into a group** by drag and drop; one
+click on the group brings all of its windows forward. Clicking a card switches to **that
+window**, not just to the application.
 
 It runs entirely on your Mac: no accounts, no network, no AI at runtime, no private APIs.
 
@@ -15,7 +16,6 @@ It runs entirely on your Mac: no accounts, no network, no AI at runtime, no priv
 | macOS | 14.0 or later (developed and verified on macOS 26.6, Apple Silicon) |
 | Xcode | 26.3 (Swift 6.2.4). Older Xcode 16 may work but is untested. |
 | xcodegen | 2.46 (optional; only needed after editing `project.yml`) |
-| git | any recent git for the branch feature (Homebrew, Command Line Tools or Xcode) |
 | Permission | **Accessibility** (System Settings › Privacy & Security › Accessibility) |
 
 No third-party runtime dependencies. The app is not sandboxed (see *Security notes*).
@@ -75,28 +75,30 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
   selection have distinct looks. The full title and project path are in the tooltip.
 - **Left click**: switch to that window (unhides/unminimizes first if needed). If the switch cannot
   be verified you get a short message in the bar, never a dialog.
-- **Right click** (or Control-click): *Rename…*, *Badge & Color…*, *Attach Project Folder…*,
-  *Reset Customization*, *Details…*.
-- **Rename scope**: *This window only* lives as long as the window and ContextDock run.
-  *Remember for this project* is available once a project folder is attached and verified; it
-  saves a project rule that is applied to every window verified to belong to that project (a
-  window-level name still wins).
-- **Attach Project Folder…**: choose the folder; Unity projects are recognized by their `Assets/`
-  and `ProjectSettings/` folders (a warning is shown otherwise). For Unity you can apply the
-  folder to this window or to all windows of that Unity process. The card then shows
-  `folder · branch`, `detached · abc1234`, `branch · no commits`, or an explicit `not a Git
-  repository` / `Git not found` / `no access` state. Stale values are marked `(stale)`.
+- **Drag and drop**: drag a card onto the middle of another card to **stack them into a group**;
+  drag onto the left or right edge of a card to **reorder**. Drag a member icon out of a group
+  (or use *Remove from Group*) to detach it. Groups with one member dissolve automatically.
+- **Group card**: shows member app icons plus a name (yours, or "Unity + Ghostty"). Clicking the
+  card raises every member in order and focuses the one you used last; clicking a member icon
+  switches to that window only. Right click: *Open All Windows*, the member list, *Rename Group…*,
+  *Badge & Color…*, *Ungroup*.
+- **Right click on a window card**: *Rename…*, *Badge & Color…*, *Add to Group* / *Remove from
+  Group*, *Reset Customization*, *Details…*.
+- **Session scope**: names, badges, colors, groups and card order live as long as the windows and
+  ContextDock run. Window identities cannot be restored reliably after a relaunch, so nothing is
+  guessed back from titles.
 - **Search**: `Control + Option + Space` (changeable in Settings, with conflict detection) or
-  *Search Windows…* in the menu. Type to filter by name, app, title, project or branch; arrows
-  move, Return switches, Escape closes, `⌘1`–`⌘9` jump to the first nine results.
+  *Search Windows…* in the menu. Type to filter by name, app, title or group; arrows move, Return
+  switches (a group entry opens the whole group), Escape closes, `⌘1`–`⌘9` jump to the first nine
+  results.
 - **Menu bar item**: Hide/Show Bar, Refresh, Search Windows…, Accessibility status, Settings…, Quit.
-- **Settings**: display, bottom margin, show auxiliary windows (dialogs/tool windows), Unity
-  `-projectPath` reading, saved project rules (delete individually), verbose logging, reset.
+- **Settings**: display, bottom margin, shortcut, show auxiliary windows (dialogs/tool windows),
+  verbose logging, reset all names/badges/groups.
 
 ### Optional integrations
 
 - **Unity Editor bridge** (`Integrations/Unity/`): a user-installed Editor script that reports
-  the verified project path so branches appear without attaching folders by hand.
+  the project name so a Unity card shows which project it is without renaming it.
 - **Ghostty labels** (`Integrations/Ghostty/`): a zsh snippet with `contextdock_label "Backend"`
   that names a terminal via its window title.
 
@@ -104,20 +106,19 @@ Both are optional, documented in their own READMEs, and never installed automati
 
 ## Data and privacy
 
-- Settings and project rules: `~/Library/Application Support/ContextDock/state.json` (versioned
-  JSON, written atomically; a corrupt file is preserved as `state.json.corrupt-<timestamp>`; a
-  file from a newer version is never overwritten). Simple preferences use `UserDefaults`.
+- Settings (currently the search shortcut): `~/Library/Application Support/ContextDock/state.json`
+  (versioned JSON, written atomically; a corrupt file is preserved as `state.json.corrupt-<timestamp>`;
+  a file from a newer version is never overwritten). Simple preferences use `UserDefaults`.
 - Unity bridge heartbeats: `~/Library/Application Support/ContextDock/Bridge/Unity/`.
-- Session names/badges live in memory and are gone when the window closes or ContextDock quits.
+- Session names, badges and groups live in memory and are gone when the window closes or ContextDock quits.
 - Only window titles and metadata are read, never window contents, terminal output or
   keystrokes. Logs hide titles and paths unless *Verbose debug logging* is on. No telemetry.
-- Git runs only in folders you attached (or the bridge verified), with an environment scrubbed of
-  `GIT_DIR`-style variables, no prompts, a timeout and an output cap.
+- ContextDock runs no subprocesses and reads no files outside its own support directory.
 
 ## Security notes
 
-- App Sandbox is **off** for this first release because the Accessibility API and reading other
-  processes' arguments do not work from a sandboxed app. This is not a way around TCC: the user
+- App Sandbox is **off** for this first release because the Accessibility API does not work from
+  a sandboxed app. This is not a way around TCC: the user
   must still grant Accessibility access explicitly.
 - Required permission: Accessibility only. No screen recording, full disk access, Automation,
   input monitoring or root.
@@ -137,8 +138,8 @@ Remove the Unity/Ghostty integration files if you installed them.
 | Bar shows "Accessibility permission required" although you granted it | The grant belongs to a previous build. Toggle ContextDock off/on in the Accessibility list (see *Signing*). |
 | A window is missing | Auxiliary windows (dialogs, floating tool windows) are hidden by default; enable *Show auxiliary windows*. Some apps do not expose windows on other Spaces. Use Details… to see role/subrole. |
 | Click activates the app but not the window | The app rejected the raise (modal sheet, unsupported attribute). ContextDock shows a message; try again once the dialog is closed. |
-| Branch says `Git not found` | Install git (Homebrew or Xcode Command Line Tools). ContextDock avoids the `/usr/bin/git` stub when no tools are installed. |
+| A drag does not start | Move at least 5 pt before releasing; a short press is a click. Drop on the middle of a card to group, on its edge to reorder. |
 | Shortcut does not work | Settings shows a conflict message if another app owns it; pick another combination. The menu item always works. |
-| Names disappear after relaunch | Window names are session-only by design. Use *Remember for this project* for persistent rules. |
+| Names or groups disappear after relaunch | Names, badges and groups are session-only by design; window identities cannot be restored safely across launches. |
 
 See `KNOWN_LIMITATIONS.md` and `TEST_REPORT.md` for verified behaviour and open limitations.

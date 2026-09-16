@@ -5,12 +5,13 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 
 ## Window discovery and identity
 
-- **Session-only names.** A name/badge given to a window lives in memory for that window's lifetime
-  and this ContextDock run. It is not restored after a relaunch. Persistent labelling works only
-  through *project rules*, which apply after a window is verified (attached folder, Unity bridge or
-  validated `-projectPath`). Title similarity is never used to restore a name. *(by design)*
-- **Card order resets on relaunch.** Cards are ordered by first appearance in the current run.
-  Drag-reordering is not implemented. *(by design)*
+- **Session-only names and groups.** Names, badges, colors, groups and manual card order live in
+  memory for this ContextDock run and die with the window or the app. Nothing is restored after a
+  relaunch, and title similarity is never used to guess a window's identity. *(by design, chosen by
+  the user on 2026-09-16 over a "remember and re-match" mode)*
+- **Group open is sequential.** Opening a group raises members one by one through the target apps'
+  activation; with many members this takes a few hundred milliseconds and macOS may decline an
+  activation. The focus target is verified; the other members are raised best effort. *(verify)*
 - **Windows on other Spaces / full screen.** Discovery relies on `kAXWindowsAttribute`. Most apps
   list windows on every Space; some do not, and full-screen windows may be reported differently.
   Windows that disappear from the list but still answer probes are kept with an "unlisted"
@@ -52,26 +53,22 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
   project. The file (and its `.meta`) shows up in the project's version control.
 - **Bridge start-time tolerance** is 2 s because Mono reports process start times at second
   precision; PID equality alone is never sufficient.
-- **`-projectPath` reading** only works when Unity was launched with that argument (Unity Hub
-  usually does); otherwise attach the folder manually. The value is validated as a Unity project
-  before it is trusted and it never overrides a manual binding (a conflict note is shown instead).
 - **Unity Hub** is a different application and is never treated as an Editor.
 - Bridge C# was compiled against Unity 6000.0.58f1 assemblies with the Editor's Roslyn; it has
   not yet been exercised inside a running Editor. *(verify)*
 
-## Git
+## Removed on purpose
 
-- Runs only in user-attached or bridge-verified folders; never searches the disk.
-- No dirty/untracked status in this release. *(by design)*
-- `safe.directory`/dubious-ownership situations are reported as *no access*, not bypassed.
-- Structure (worktree root, common dir) refreshes every 60 s, branches every 5 s while the bar is
-  visible and every 30 s when hidden. Branch changes therefore appear within about one interval.
+- **Project folder binding and Git branch display** were built (M2) and then removed on
+  2026-09-16 at the user's request: the context of a window is the set of windows it works with,
+  expressed as a group, not a directory. The Unity bridge still shows the project *name*; the
+  Ghostty structured title can still carry a branch string as display-only text.
 
 ## Permissions, signing, distribution
 
 - Ad-hoc signing means a rebuilt binary may need the Accessibility grant re-enabled. See README
   for the self-signed identity workaround. TCC is never reset or bypassed.
-- App Sandbox is off (required for the Accessibility API and `KERN_PROCARGS2`).
+- App Sandbox is off (required for the Accessibility API).
 - No auto-update, no App Store build, no launch-at-login in this release. *(by design)*
 
 ## Performance targets not yet measured
