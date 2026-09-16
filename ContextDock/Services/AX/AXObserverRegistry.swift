@@ -16,8 +16,9 @@ enum AXNotificationName {
     static let windowLevel = [titleChanged, elementDestroyed, windowMiniaturized, windowDeminiaturized]
 }
 
-/// Passed to AX as the observer `refcon`. Immutable, so it is `Sendable`, and it carries only
-/// ContextDock's own identifiers — never an AX element.
+/// Describes one observation target. Immutable, so it is `Sendable`, and it carries only
+/// ContextDock's own identifiers — never an AX element. Tokens are never handed to AX as raw
+/// pointers; AX receives an integer id that is resolved through `AXObservationRegistry`.
 final class AXObservationToken: Sendable {
     let process: ProcessInstanceKey
     let window: WindowSessionID?
@@ -30,14 +31,40 @@ final class AXObservationToken: Sendable {
     }
 }
 
+/// Maps the integer `refcon` values given to AX back to tokens. Because the lookup happens on
+/// the AX actor and unknown ids are ignored, a notification that was already queued when its
+/// registration was removed can never touch freed memory.
+@AXActor
+enum AXObservationRegistry {
+    private static var tokens: [UInt: AXObservationToken] = [:]
+    private static var nextID: UInt = 1
+
+    static func register(_ token: AXObservationToken) -> UInt {
+        let id = nextID
+        nextID += 1
+        tokens[id] = token
+        return id
+    }
+
+    static func unregister(_ id: UInt) {
+        tokens[id] = nil
+    }
+
+    static func dispatch(id: UInt, notification: String) {
+        guard let token = tokens[id] else { return }
+        token.worker.handle(notification: notification, token: token)
+    }
+}
+
 /// C callback. Runs on the AX worker thread between executor jobs; it hops back onto the
 /// actor with a `Task` because `assumeIsolated` is unavailable for custom executors on macOS 14.
+/// The refcon is a plain integer id, never a pointer to an object.
 private let observerCallback: AXObserverCallback = { _, _, notification, refcon in
     guard let refcon else { return }
-    let token = Unmanaged<AXObservationToken>.fromOpaque(refcon).takeUnretainedValue()
+    let id = UInt(bitPattern: refcon)
     let name = notification as String
     Task { @AXActor in
-        token.worker.handle(notification: name, token: token)
+        AXObservationRegistry.dispatch(id: id, notification: name)
     }
 }
 
@@ -53,7 +80,9 @@ final class AXObserverHandle {
         let element: AXUIElement
         let notification: String
         let token: AXObservationToken
+        let tokenID: UInt
     }
+    private var tokenIDs: [ObjectIdentifier: UInt] = [:]
 
     init?(pid: pid_t) {
         var observer: AXObserver?
@@ -69,13 +98,18 @@ final class AXObserverHandle {
 
     @discardableResult
     func add(_ notification: String, to element: AXUIElement, token: AXObservationToken) -> Bool {
-        let refcon = Unmanaged.passUnretained(token).toOpaque()
+        let tokenID: UInt
+        if let existing = tokenIDs[ObjectIdentifier(token)] {
+            tokenID = existing
+        } else {
+            tokenID = AXObservationRegistry.register(token)
+            tokenIDs[ObjectIdentifier(token)] = tokenID
+        }
+        guard let refcon = UnsafeMutableRawPointer(bitPattern: tokenID) else { return false }
         let error = AXObserverAddNotification(observer, element, notification as CFString, refcon)
         switch error {
-        case .success:
-            registrations.append(Registration(element: element, notification: notification, token: token))
-            return true
-        case .notificationAlreadyRegistered:
+        case .success, .notificationAlreadyRegistered:
+            registrations.append(Registration(element: element, notification: notification, token: token, tokenID: tokenID))
             return true
         default:
             if Log.verbose {
@@ -94,6 +128,7 @@ final class AXObserverHandle {
             AXObserverRemoveNotification(observer, reg.element, reg.notification as CFString)
         }
         registrations = keep
+        releaseUnusedTokens()
     }
 
     func invalidate() {
@@ -101,6 +136,17 @@ final class AXObserverHandle {
             AXObserverRemoveNotification(observer, reg.element, reg.notification as CFString)
         }
         registrations.removeAll()
+        releaseUnusedTokens()
         CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .defaultMode)
+    }
+
+    /// Unregisters token ids no registration refers to any more. Late callbacks for those ids
+    /// are ignored by the registry.
+    private func releaseUnusedTokens() {
+        let live = Set(registrations.map(\.tokenID))
+        for (object, id) in tokenIDs where !live.contains(id) {
+            AXObservationRegistry.unregister(id)
+            tokenIDs[object] = nil
+        }
     }
 }
