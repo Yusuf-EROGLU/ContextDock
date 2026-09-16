@@ -75,7 +75,7 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | A15 | Other Space / full screen / Stage Manager | NOT_RUN | Best effort; record real behaviour here. |
 | A16 | External display removed | NOT_RUN | Relayout on `didChangeScreenParametersNotification` with fallback to the first screen. |
 | A17 | AX or Git unresponsive | NOT_RUN (manual) | Automated: stale handling, runner timeout/cap tests. AX calls have 1 s messaging timeouts off the main thread. |
-| A18 | Global shortcut conflict | NOT_RUN | `eventHotKeyExistsErr` → conflict message in Settings; menu item fallback. |
+| A18 | Global shortcut conflict | **PASS with caveat** | 2026-09-16: a helper process registered ⌃⌥Space first; ContextDock's registration still returned `noErr`, so no conflict message is possible for other apps (Carbon reports `eventHotKeyExistsErr` only within one process, verified). The Settings hint now says so; the menu item remains as the alternative. Same-process duplicate detection is covered by the recorder flow. |
 | A19 | Ghostty title fixed / overwritten | NOT_RUN | Manual names are independent of titles; README documents the config interaction. |
 | A20 | Stale bridge / PID reused | NOT_RUN (manual) | Automated: bridge matching tests. |
 | A21 | Corrupt settings file | **PASS** | 2026-09-16: `state.json` replaced with `{ this is not json`; the Release app launched, listed windows normally and preserved the file as `state.json.corrupt-20260916-182849`. Also covered by JSONStore/PersistenceService tests. |

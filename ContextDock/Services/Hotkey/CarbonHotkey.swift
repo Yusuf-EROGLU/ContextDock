@@ -2,7 +2,9 @@ import AppKit
 import Carbon.HIToolbox
 
 enum HotkeyError: Error, Equatable, Sendable {
-    /// Another application already registered this combination.
+    /// Carbon reported `eventHotKeyExistsErr`. In practice this only happens for a duplicate
+    /// registration inside this process; another application holding the same combination is
+    /// not reported (verified on macOS 26: cross-process registration returns noErr).
     case conflict
     case failed(OSStatus)
     case noModifier

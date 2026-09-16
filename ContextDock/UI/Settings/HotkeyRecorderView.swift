@@ -28,9 +28,10 @@ struct HotkeySettingsView: View {
                         .foregroundStyle(.red)
                 }
             }
-            Text("The Search Windows… menu item always works, even without a shortcut.")
+            Text("macOS only reports a conflict for shortcuts this app already registered; another app can silently own the same keys. If the shortcut does nothing, pick a different combination. The Search Windows… menu item always works.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

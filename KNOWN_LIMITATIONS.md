@@ -39,6 +39,15 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 - **One retry only.** If the user activates a third app during the attempt, the request is aborted
   instead of stealing focus back. *(by design)*
 
+## Global shortcut
+
+- **Conflicts with other apps are not detectable.** `RegisterEventHotKey` returns
+  `eventHotKeyExistsErr` only for a duplicate registration within the same process; registering a
+  combination another app already owns succeeds silently and macOS delivers the key to one of them
+  (verified 2026-09-16 with a helper process holding ⌃⌥Space). ContextDock therefore cannot warn
+  about such a clash; if the shortcut does nothing, choose another combination in Settings. The
+  *Search Windows…* menu item always works. No key-logging fallback is used. *(platform limit)*
+
 ## Ghostty
 
 - **One card per window.** Tabs and splits are not separate cards; the card title follows whatever
