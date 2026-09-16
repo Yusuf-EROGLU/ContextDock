@@ -71,19 +71,19 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | A11 | Detached HEAD / no commits | N/A | Removed with the Git feature. |
 | A12 | Unicode + space paths | N/A | No paths are processed any more (bridge project path is display-only). |
 | A13 | Git missing / folder deleted / no access | N/A | Removed with the Git feature. |
-| A14 | ContextDock relaunched | NOT_RUN | Shortcut persists via state.json (automated round trip); names, badges and groups intentionally do not return. |
+| A14 | ContextDock relaunched | **PASS** (partial) | Relaunched many times during the session: bar, permission and windows come back; names/groups intentionally do not. Custom shortcut persistence covered by the JSONStore round-trip test, not yet exercised by hand. |
 | A15 | Other Space / full screen / Stage Manager | NOT_RUN | Best effort; record real behaviour here. |
 | A16 | External display removed | NOT_RUN | Relayout on `didChangeScreenParametersNotification` with fallback to the first screen. |
 | A17 | AX or Git unresponsive | NOT_RUN (manual) | Automated: stale handling, runner timeout/cap tests. AX calls have 1 s messaging timeouts off the main thread. |
 | A18 | Global shortcut conflict | NOT_RUN | `eventHotKeyExistsErr` → conflict message in Settings; menu item fallback. |
 | A19 | Ghostty title fixed / overwritten | NOT_RUN | Manual names are independent of titles; README documents the config interaction. |
 | A20 | Stale bridge / PID reused | NOT_RUN (manual) | Automated: bridge matching tests. |
-| A21 | Corrupt settings file | NOT_RUN (manual) | Automated: JSONStore + PersistenceService tests; Settings shows the preserved file. |
+| A21 | Corrupt settings file | **PASS** | 2026-09-16: `state.json` replaced with `{ this is not json`; the Release app launched, listed windows normally and preserved the file as `state.json.corrupt-20260916-182849`. Also covered by JSONStore/PersistenceService tests. |
 | A22 | Typing right after clicking a card | **PASS** | User test 2026-09-16: keystrokes reach the target window. |
-| G01 | Drag a card onto another → group card with both icons; drag onto edge → reorder | NOT_RUN | Added 2026-09-16 with the grouping feature. |
-| G02 | Click group → all members forward, last-used member focused; click member icon → only that window | NOT_RUN | |
-| G03 | Remove from group / ungroup / group dissolves when a member closes | NOT_RUN | Automated: BarArrangement tests. |
-| G04 | Group in search (⌃⌥Space) opens all members | NOT_RUN | |
+| G01 | Drag a card onto another → group card with both icons; drag onto edge → reorder | **PASS** | User test 2026-09-16. |
+| G02 | Click group → all members forward, last-used member focused; click member icon → only that window | **PASS** | User test 2026-09-16. |
+| G03 | Remove from group / ungroup / group dissolves when a member closes | **PASS** | User test 2026-09-16; automated: BarArrangement tests. |
+| G04 | Group in search (⌃⌥Space) opens all members | **PASS** | User test 2026-09-16. |
 | M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **PASS** | Reported by the user on 2026-09-16 after granting Accessibility to the `ContextDock Dev`-signed build. |
 
 ### How to test grouping (G01–G04)
