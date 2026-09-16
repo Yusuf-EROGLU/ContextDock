@@ -28,6 +28,10 @@ struct CardInteractionView: NSViewRepresentable {
         var makeMenu: (() -> NSMenu)?
         private var trackingArea: NSTrackingArea?
         private var pressed = false
+        private var pressLocation: NSPoint?
+        private var lastDragLocation: NSPoint?
+        private var didPan = false
+        private static let dragThreshold: CGFloat = 4
 
         override var acceptsFirstResponder: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -54,11 +58,30 @@ struct CardInteractionView: NSViewRepresentable {
                 return
             }
             pressed = true
+            didPan = false
+            pressLocation = event.locationInWindow
+            lastDragLocation = event.locationInWindow
+        }
+
+        /// Dragging on a card pans the strip instead of clicking (grab-and-drag scrolling).
+        override func mouseDragged(with event: NSEvent) {
+            guard pressed, let start = pressLocation, let last = lastDragLocation else { return }
+            let current = event.locationInWindow
+            if !didPan, abs(current.x - start.x) < Self.dragThreshold, abs(current.y - start.y) < Self.dragThreshold {
+                return
+            }
+            didPan = true
+            if let scrollView = enclosingScrollView {
+                StripPanning.pan(scrollView, by: current.x - last.x)
+            }
+            lastDragLocation = current
         }
 
         override func mouseUp(with event: NSEvent) {
             guard pressed else { return }
             pressed = false
+            defer { pressLocation = nil; lastDragLocation = nil }
+            guard !didPan else { return }
             let location = convert(event.locationInWindow, from: nil)
             if bounds.contains(location) {
                 onClick?()
