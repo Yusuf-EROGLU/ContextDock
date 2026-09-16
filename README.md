@@ -60,11 +60,13 @@ Without the permission the menu bar item and Settings still work, and the bar sh
 permission state instead of any windows. If the permission is removed while running, discovery
 pauses and the bar says so.
 
-**Signing and re-granting.** The default build is ad-hoc signed. macOS ties the Accessibility
-grant to the signed code, so a *rebuilt* app can lose the grant; toggle ContextDock off and on
-in the Accessibility list to restore it. For a stable grant during development, create a
-self-signed code-signing certificate in Keychain Access (e.g. named `ContextDock Dev`) and
-build with `CODE_SIGN_IDENTITY="ContextDock Dev" scripts/install-local.sh`.
+**Signing and re-granting.** Without a signing identity the build is ad-hoc signed. macOS ties
+the Accessibility grant to the signed code, so a *rebuilt* ad-hoc app loses the grant; remove and
+re-add ContextDock in the Accessibility list (or `tccutil reset Accessibility
+com.yusuferoglu.ContextDock`) to grant it again. For a stable grant, create a self-signed
+code-signing certificate named `ContextDock Dev` (Keychain Access › Certificate Assistant ›
+Create a Certificate, type *Code Signing*, or the OpenSSL + `security import` route). The build
+scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
 
 ## Usage
 
