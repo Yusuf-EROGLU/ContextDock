@@ -26,6 +26,7 @@
 		3B8D787999C86CF03FA52AFB /* GitExecutableLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1039733B71F8BCF1DE8BE78 /* GitExecutableLocator.swift */; };
 		3BD5C3900D8C9D6CC58D8751 /* SessionCustomizationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5FDAA7B615EAA4009CD4F71 /* SessionCustomizationStore.swift */; };
 		3CBDF984CEAA5B31EAD17A2F /* FocusServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB5630B64B6A9C1B280D4AA /* FocusServiceTests.swift */; };
+		3EB97DED19B8635D64E8D8B8 /* HorizontalStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43514D30DC73D9A4DA3994F0 /* HorizontalStrip.swift */; };
 		3F2B2638A42B9AB32D7AA52D /* RunningAppsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569F8A6951A043C4FF2E9443 /* RunningAppsProvider.swift */; };
 		43863997C3520BB1985F6159 /* AXFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8CC66C0DE2BD14E359514D /* AXFailure.swift */; };
 		45242AC16A6556282DB46182 /* AsyncSemaphore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F650EE08A25597B6C1528CB1 /* AsyncSemaphore.swift */; };
@@ -115,6 +116,7 @@
 		3A1D1CFA1515187FD186A9C0 /* SearchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPanelController.swift; sourceTree = "<group>"; };
 		3DA4646B5A081850088C1C83 /* ProcessInstanceKeyResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessInstanceKeyResolver.swift; sourceTree = "<group>"; };
 		3EC050B9AA721D2CBAC745AB /* AXActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXActor.swift; sourceTree = "<group>"; };
+		43514D30DC73D9A4DA3994F0 /* HorizontalStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HorizontalStrip.swift; sourceTree = "<group>"; };
 		4373814425C119A07AAB5BCF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		444B095B24618954482FCFF3 /* WindowTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTracker.swift; sourceTree = "<group>"; };
 		47C0C5925D39AF9FB881F62F /* UnityBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnityBridgeTests.swift; sourceTree = "<group>"; };
@@ -468,6 +470,7 @@
 				1C808584C1C2F660556A2AE3 /* CardActions.swift */,
 				4CCA94014C5563453AECAE2F /* CardInteractionView.swift */,
 				6D27EE5A6C65869522E3DC0D /* DockBarView.swift */,
+				43514D30DC73D9A4DA3994F0 /* HorizontalStrip.swift */,
 				A57D0E47317CB989F0E725B8 /* WindowCardView.swift */,
 			);
 			path = Bar;
@@ -620,6 +623,7 @@
 				740649856E84B9970C382478 /* GitRefreshScheduler.swift in Sources */,
 				F0457FEEF75809151ADCAB52 /* GitRunner.swift in Sources */,
 				592ED34A4566FC8F7E9D277A /* GitService.swift in Sources */,
+				3EB97DED19B8635D64E8D8B8 /* HorizontalStrip.swift in Sources */,
 				A1B4FF0E2CF67D13A188FFFE /* HotkeyConfig.swift in Sources */,
 				16CC324576030CCA7AC303CF /* HotkeyRecorderView.swift in Sources */,
 				3B63E562A4063B5D3FFB8A7E /* Identity.swift in Sources */,

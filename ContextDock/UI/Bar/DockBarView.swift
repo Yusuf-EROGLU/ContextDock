@@ -56,7 +56,7 @@ struct DockBarView: View {
     }
 
     private var cards: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        HorizontalStrip(height: WindowCardView.height) {
             HStack(spacing: Self.spacing) {
                 ForEach(store.cards) { card in
                     WindowCardView(
