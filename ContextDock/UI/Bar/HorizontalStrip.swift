@@ -16,15 +16,24 @@ struct HorizontalStrip<Content: View>: NSViewRepresentable {
         nsView.update(rootView: content())
     }
 
+    /// Hosting view that asks its superview to lay out again when SwiftUI reports a new ideal
+    /// size, so the strip never has to force a measurement itself.
+    final class DocumentHostingView<Root: View>: NSHostingView<Root> {
+        override func invalidateIntrinsicContentSize() {
+            super.invalidateIntrinsicContentSize()
+            enclosingScrollView?.superview?.needsLayout = true
+        }
+    }
+
     final class StripView<Root: View>: NSView {
         private let scrollView = WheelRedirectingScrollView()
-        private let hosting: NSHostingView<Root>
+        private let hosting: DocumentHostingView<Root>
         private let height: CGFloat
         private var panStart: NSPoint?
 
         init(rootView: Root, height: CGFloat) {
             self.height = height
-            hosting = NSHostingView(rootView: rootView)
+            hosting = DocumentHostingView(rootView: rootView)
             super.init(frame: .zero)
 
             hosting.sizingOptions = [.intrinsicContentSize]
@@ -59,7 +68,7 @@ struct HorizontalStrip<Content: View>: NSViewRepresentable {
 
         func update(rootView: Root) {
             hosting.rootView = rootView
-            layoutDocument()
+            needsLayout = true
         }
 
         override func layout() {
@@ -67,11 +76,23 @@ struct HorizontalStrip<Content: View>: NSViewRepresentable {
             layoutDocument()
         }
 
+        /// Idempotent: reads SwiftUI's cached intrinsic width (never forces a measurement) and
+        /// touches the document frame and scroll position only when they actually change, so
+        /// a layout pass does not schedule another one.
         private func layoutDocument() {
-            let fitting = hosting.fittingSize
-            let width = max(fitting.width, scrollView.contentView.bounds.width)
-            hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
-            StripPanning.clamp(scrollView)
+            let visibleWidth = scrollView.contentView.bounds.width
+            let intrinsic = hosting.intrinsicContentSize.width
+            let contentWidth = intrinsic > 0 && intrinsic != NSView.noIntrinsicMetric ? intrinsic : 0
+            let width = max(contentWidth, visibleWidth)
+            let target = NSRect(x: 0, y: 0, width: width, height: height)
+            if hosting.frame != target {
+                hosting.frame = target
+            }
+            let clip = scrollView.contentView
+            let maxX = max(0, width - visibleWidth)
+            if clip.bounds.minX > maxX || clip.bounds.minX < 0 {
+                StripPanning.pan(scrollView, by: 0)
+            }
         }
 
         // Drag-to-pan on empty strip areas (cards handle their own drags and forward them).

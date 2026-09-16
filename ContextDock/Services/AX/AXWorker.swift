@@ -30,6 +30,11 @@ final class AXWorker {
         var notificationDebounce: Duration = .milliseconds(150)
         var titleDebounce: Duration = .milliseconds(100)
         var elementTimeoutSeconds: Float = 1.0
+        /// Apps that deliver AX notifications are re-scanned only every N ticks; the frontmost
+        /// app and apps without a working observer are scanned every tick.
+        var observedAppScanEveryTicks = 4
+        /// Trust is re-checked every N ticks while granted (AX errors also reveal revocation).
+        var trustCheckEveryTicks = 4
     }
 
     fileprivate struct AppSession {
@@ -41,6 +46,7 @@ final class AXWorker {
         var appToken: AXObservationToken?
         var tracker: WindowTracker<AXUIElement>
         var consecutiveFailures: Int
+        var lastScanTick: UInt64 = 0
     }
 
     private enum DebounceKey: Hashable, Sendable {
@@ -68,6 +74,7 @@ final class AXWorker {
     private var permission: PermissionState = .unknown
     private var wasEverTrusted = false
     private var isReconciling = false
+    private var tick: UInt64 = 0
     private var lastEmitted: DiscoverySnapshot?
     private var loopTask: Task<Void, Never>?
 
@@ -134,8 +141,10 @@ final class AXWorker {
         guard mode != .paused, !isReconciling else { return }
         isReconciling = true
         defer { isReconciling = false }
+        tick += 1
 
-        guard AXPermission.isTrusted() else {
+        let mustCheckTrust = permission != .granted || tick % UInt64(configuration.trustCheckEveryTicks) == 0
+        guard !mustCheckTrust || AXPermission.isTrusted() else {
             let state: PermissionState = wasEverTrusted ? .revoked : .denied
             if permission != state || !sessions.isEmpty {
                 teardownAllSessions()
@@ -163,11 +172,15 @@ final class AXWorker {
             if var session = sessions[key] {
                 session.info.isHidden = app.isHidden
                 session.info.isActive = app.isActive
-                scan(&session)
+                if isScanDue(session, isActive: app.isActive) {
+                    scan(&session)
+                    session.lastScanTick = tick
+                }
                 sessions[key] = session
             } else {
                 var session = makeSession(key: key, app: app)
                 scan(&session)
+                session.lastScanTick = tick
                 sessions[key] = session
             }
         }
@@ -180,6 +193,12 @@ final class AXWorker {
         }
 
         emit(force: regained)
+    }
+
+    /// Notification-backed apps are polled less often; everything else every tick.
+    private func isScanDue(_ session: AppSession, isActive: Bool) -> Bool {
+        if session.observer == nil || isActive || session.consecutiveFailures > 0 { return true }
+        return tick - session.lastScanTick >= UInt64(configuration.observedAppScanEveryTicks)
     }
 
     private func makeSession(key: ProcessInstanceKey, app: AppDescriptor) -> AppSession {
@@ -314,23 +333,32 @@ final class AXWorker {
         }
     }
 
-    private func readAttributes(_ element: AXUIElement) -> Result<WindowAttributes, AXFailure> {
-        let role: String?
-        switch AXElement.string(element, kAXRoleAttribute as String) {
-        case .success(let value): role = value
-        case .failure(let failure) where failure == .notResponding || failure == .invalidElement || failure == .notTrusted:
-            return .failure(failure)
-        case .failure: role = nil
-        }
-        guard role == WindowFilter.windowRole else {
-            return .success(WindowAttributes(role: role, subrole: nil, title: nil, isMinimized: false, isMain: false))
-        }
+    private static let windowAttributeNames = [
+        kAXRoleAttribute as String,
+        kAXSubroleAttribute as String,
+        kAXTitleAttribute as String,
+        kAXMinimizedAttribute as String,
+        kAXMainAttribute as String,
+    ]
 
-        let subrole = optional(AXElement.string(element, kAXSubroleAttribute as String))
-        let title = optional(AXElement.string(element, kAXTitleAttribute as String))
-        let minimized = optional(AXElement.bool(element, kAXMinimizedAttribute as String)) ?? false
-        let main = optional(AXElement.bool(element, kAXMainAttribute as String)) ?? false
-        return .success(WindowAttributes(role: role, subrole: subrole, title: title, isMinimized: minimized, isMain: main))
+    /// One IPC per window instead of five: role, subrole, title, minimized and main together.
+    private func readAttributes(_ element: AXUIElement) -> Result<WindowAttributes, AXFailure> {
+        switch AXElement.copyAttributes(element, Self.windowAttributeNames) {
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let values):
+            let role = AXElement.stringValue(values[0])
+            guard role == WindowFilter.windowRole else {
+                return .success(WindowAttributes(role: role, subrole: nil, title: nil, isMinimized: false, isMain: false))
+            }
+            return .success(WindowAttributes(
+                role: role,
+                subrole: AXElement.stringValue(values[1]),
+                title: AXElement.stringValue(values[2]),
+                isMinimized: AXElement.boolValue(values[3]) ?? false,
+                isMain: AXElement.boolValue(values[4]) ?? false
+            ))
+        }
     }
 
     private func optional<T>(_ result: Result<T?, AXFailure>) -> T? {
@@ -391,6 +419,7 @@ final class AXWorker {
     private func rescan(process key: ProcessInstanceKey) {
         guard mode != .paused, var session = sessions[key] else { return }
         scan(&session)
+        session.lastScanTick = tick
         sessions[key] = session
         emit()
     }

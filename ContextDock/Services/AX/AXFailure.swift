@@ -78,6 +78,44 @@ enum AXElement {
         }
     }
 
+    /// Reads several attributes with a single round trip. Unsupported or missing attributes
+    /// come back as `nil` entries; only element-level failures (dead element, timeout, no
+    /// permission) fail the whole call.
+    static func copyAttributes(_ element: AXUIElement, _ attributes: [String]) -> Result<[CFTypeRef?], AXFailure> {
+        var values: CFArray?
+        let error = AXUIElementCopyMultipleAttributeValues(element, attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
+        guard error == .success, let values else { return .failure(AXFailure(error)) }
+        let count = CFArrayGetCount(values)
+        var result: [CFTypeRef?] = Array(repeating: nil, count: attributes.count)
+        for index in 0..<min(count, attributes.count) {
+            guard let raw = CFArrayGetValueAtIndex(values, index) else { continue }
+            let item = Unmanaged<CFTypeRef>.fromOpaque(raw).takeUnretainedValue()
+            if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType((item as! AXValue)) == .axError {
+                var code = AXError.success
+                AXValueGetValue((item as! AXValue), .axError, &code)
+                let failure = AXFailure(code)
+                if failure == .invalidElement || failure == .notResponding || failure == .notTrusted {
+                    return .failure(failure)
+                }
+                continue
+            }
+            result[index] = item
+        }
+        return .success(result)
+    }
+
+    static func stringValue(_ value: CFTypeRef?) -> String? {
+        value as? String
+    }
+
+    static func boolValue(_ value: CFTypeRef?) -> Bool? {
+        guard let value else { return nil }
+        if CFGetTypeID(value) == CFBooleanGetTypeID() {
+            return CFBooleanGetValue((value as! CFBoolean))
+        }
+        return (value as? NSNumber)?.boolValue
+    }
+
     static func setBool(_ element: AXUIElement, _ attribute: String, _ value: Bool) -> Result<Void, AXFailure> {
         let error = AXUIElementSetAttributeValue(element, attribute as CFString, value ? kCFBooleanTrue : kCFBooleanFalse)
         return error == .success ? .success(()) : .failure(AXFailure(error))
