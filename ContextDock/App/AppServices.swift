@@ -20,6 +20,15 @@ final class AppServices {
     private let popup = PopupPanelPresenter()
     let cardActions: CardActions
 
+    // M2: project awareness, search and the global shortcut.
+    let git = GitService()
+    private(set) lazy var gitScheduler = GitRefreshScheduler(service: git, store: store)
+    private(set) lazy var projectBinding = ProjectBindingCoordinator(store: store, barState: barState)
+    private(set) lazy var search = SearchPanelController(store: store, preferences: preferences)
+    private let hotkeyRegistrar = CarbonHotkeyRegistrar()
+    private(set) lazy var hotkeyModel = HotkeyModel(registrar: hotkeyRegistrar, persistence: persistence)
+    private var knownProcessKeys: Set<ProcessInstanceKey> = []
+
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
     private var didShowPermissionOnboarding = false
@@ -43,6 +52,7 @@ final class AppServices {
         wireStatusItem()
         wirePanel()
         wireStoreCallbacks()
+        wireProjectAwareness()
         observeWorkspace()
         observePreferences()
 
@@ -51,6 +61,7 @@ final class AppServices {
         snapshotTask = Task { @MainActor [weak self] in
             for await snapshot in worker.snapshots {
                 store.apply(snapshot)
+                self?.updateProcessHints(for: snapshot)
                 self?.handlePermissionChange(snapshot.permission)
             }
         }
@@ -63,6 +74,9 @@ final class AppServices {
         if preferences.barVisible {
             panelController.show()
         }
+        gitScheduler.setBarVisible(preferences.barVisible)
+        gitScheduler.start()
+        hotkeyModel.registerSaved()
         Log.app.info("ContextDock started")
     }
 
@@ -86,6 +100,7 @@ final class AppServices {
             preferences.barVisible.toggle()
         }
         statusItem.onRefresh = { [unowned self] in refresh() }
+        statusItem.onSearch = { [unowned self] in search.toggle() }
         statusItem.onSettings = { [unowned self] in settingsWindow.show() }
         statusItem.onPermission = { [unowned self] in permissionWindow.show() }
         statusItem.onQuit = { NSApp.terminate(nil) }
@@ -103,9 +118,36 @@ final class AppServices {
         permissionWindow.onRecheck = { [unowned self] in refresh() }
     }
 
+    private func wireProjectAwareness() {
+        cardActions.onAttachProject = { [unowned self] id in projectBinding.attach(to: id) }
+        projectBinding.onBound = { [unowned self] in gitScheduler.pathsMayHaveChanged() }
+        search.onChoose = { [unowned self] id in activate(id) }
+        hotkeyRegistrar.onPressed = { [unowned self] in search.toggle() }
+    }
+
+    /// Reads Unity `-projectPath` arguments for newly seen Unity processes (optional adapter).
+    private func updateProcessHints(for snapshot: DiscoverySnapshot) {
+        let keys = Set(snapshot.processes.keys)
+        let added = keys.subtracting(knownProcessKeys)
+        knownProcessKeys = keys
+        guard preferences.readProcessArguments else { return }
+        for key in added {
+            guard let process = snapshot.processes[key], process.kind.isUnityEditor else { continue }
+            let hint = UnityProcessArgumentsAdapter.hint(pid: key.pid)
+            if let hint {
+                store.setProcessArgumentsHint(hint, for: key)
+                if Log.verbose {
+                    let pid = key.pid
+                    Log.integrations.debug("Unity pid=\(pid) -projectPath found (validation: \(String(describing: hint.validation), privacy: .public))")
+                }
+            }
+        }
+    }
+
     private func wireStoreCallbacks() {
         store.onCardsChanged = { [unowned self] in
             panelController.relayout()
+            gitScheduler.pathsMayHaveChanged()
         }
         store.onWindowsRemoved = { [unowned self] removed in
             if let selected = barState.keyboardSelectedCard, removed.contains(selected) {
@@ -137,8 +179,9 @@ final class AppServices {
         ] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main, using: reconcile))
         }
-        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @AXActor in worker.setMode(.paused) }
+            Task { @MainActor in self?.gitScheduler.setPaused(true) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyWorkerMode() }
@@ -185,6 +228,8 @@ final class AppServices {
         let mode: AXWorker.Mode = preferences.barVisible ? .active : .hidden
         let worker = self.worker
         Task { @AXActor in worker.setMode(mode) }
+        gitScheduler.setBarVisible(preferences.barVisible)
+        gitScheduler.setPaused(false)
     }
 
     private func handlePermissionChange(_ permission: PermissionState) {
@@ -213,6 +258,7 @@ final class AppServices {
 
     func activate(_ id: WindowSessionID) {
         popup.dismiss()
+        if search.isShown { search.cancel() }
         let focus = self.focus
         Task { @MainActor [weak self] in
             let outcome = await focus.focus(id)
@@ -240,7 +286,7 @@ final class AppServices {
             persistence: persistence,
             onResetAll: { [unowned self] in confirmResetAll() },
             onDeleteRule: { [unowned self] id in store.deleteRule(id: id) },
-            hotkeySection: nil
+            hotkeySection: AnyView(HotkeySettingsView(model: hotkeyModel))
         ))
     }
 

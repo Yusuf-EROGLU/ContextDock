@@ -15,6 +15,10 @@ final class WindowStore {
     private(set) var automaticInputs: [WindowSessionID: ContextInputs] = [:]
     /// Git facts keyed by normalized worktree/project path (M2).
     private(set) var gitInfo: [String: GitInfo] = [:]
+    /// Unity `-projectPath` hints keyed by process instance (M2, optional adapter).
+    private(set) var processArgumentHints: [ProcessInstanceKey: ProcessArgumentsHint] = [:]
+    /// Unity bridge reports keyed by process instance (M3).
+    private(set) var bridgeReports: [ProcessInstanceKey: (report: UnityBridgeReport, isStale: Bool)] = [:]
 
     let customizations: SessionCustomizationStore
     let persistence: PersistenceService
@@ -44,12 +48,19 @@ final class WindowStore {
             for id in removed { automaticInputs[id] = nil }
             onWindowsRemoved?(removed)
         }
-        let livePids = Set(newSnapshot.processes.keys.map(\.pid))
-        for key in snapshot.processes.keys where !livePids.contains(key.pid) {
-            apps.forgetIcon(for: key.pid)
+        let liveKeys = Set(newSnapshot.processes.keys)
+        for key in processArgumentHints.keys where !liveKeys.contains(key) {
+            processArgumentHints[key] = nil
+        }
+        for key in bridgeReports.keys where !liveKeys.contains(key) {
+            bridgeReports[key] = nil
         }
         rebuildCards()
     }
+
+    var processKeys: Set<ProcessInstanceKey> { Set(snapshot.processes.keys) }
+
+    func process(for key: ProcessInstanceKey) -> ProcessSnapshot? { snapshot.processes[key] }
 
     // MARK: - Customization
 
@@ -133,6 +144,21 @@ final class WindowStore {
         rebuildCards()
     }
 
+    func setProcessArgumentsHint(_ hint: ProcessArgumentsHint?, for key: ProcessInstanceKey) {
+        if processArgumentHints[key] != hint {
+            processArgumentHints[key] = hint
+            rebuildCards()
+        }
+    }
+
+    func setBridgeReport(_ report: UnityBridgeReport?, isStale: Bool, for key: ProcessInstanceKey) {
+        let existing = bridgeReports[key]
+        if existing?.report != report || existing?.isStale != isStale {
+            bridgeReports[key] = report.map { ($0, isStale) }
+            rebuildCards()
+        }
+    }
+
     func setGitInfo(_ info: GitInfo?, for path: String) {
         let key = PathNormalizer.normalize(path)
         if gitInfo[key] != info {
@@ -174,6 +200,11 @@ final class WindowStore {
             let customization = customizations[window.id]
             var inputs = automaticInputs[window.id] ?? ContextInputs()
             inputs.manual = customization?.projectBinding
+            if inputs.processArguments == nil { inputs.processArguments = processArgumentHints[window.process] }
+            if inputs.bridge == nil, let bridge = bridgeReports[window.process] {
+                inputs.bridge = bridge.report
+                inputs.bridgeIsStale = bridge.isStale
+            }
             inputs.rawTitle = window.title
             if inputs.structuredTitle == nil, let title = window.title {
                 inputs.structuredTitle = StructuredTitleParser.parse(title)
