@@ -71,7 +71,9 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 - App Sandbox is off (required for the Accessibility API).
 - No auto-update, no App Store build, no launch-at-login in this release. *(by design)*
 
-## Performance targets not yet measured
+## Performance
 
-- Idle CPU (< 1 % target), notification latency (~1 s target) and fallback discovery (~3 s target)
-  have not been measured on the real machine yet; see `TEST_REPORT.md`.
+- Idle CPU measured at ~0.6–0.7 % with the bar visible and ~0.3 % hidden on a busy machine (see
+  `TEST_REPORT.md`). Apps that deliver AX notifications are re-scanned only every 10 s; a window
+  change such an app fails to announce can take up to 10 s to appear unless the app is frontmost.
+- Notification latency and fallback discovery times have not been measured formally yet.

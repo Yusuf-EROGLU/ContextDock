@@ -99,10 +99,21 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 
 ## Performance
 
-First measurement 2026-09-16 (9 cards, bar visible, idle): **~1.5 % CPU, 28 MB RSS** (`top -l 3 -s 10`).
-Above the < 1 % target; planned fix: read window attributes only on notification and lengthen the
-reconciliation scan for apps that deliver AX notifications reliably.
+Measured 2026-09-16 on the Release build (`top -l 2 -s 20/30/60`, machine in normal use, so the
+numbers include real title changes and app switches):
 
-Earlier note: Targets from the spec: notified title
-change ≈ 1 s, fallback discovery ≈ 3 s, idle CPU < 1 %. Reconciliation interval is 2.5 s while the
-bar is visible and 10 s when hidden; AX notification debounce 150 ms; Git branch refresh 5 s / 30 s.
+| State | Before | After |
+|---|---|---|
+| Bar visible, idle-ish | ~0.9–1.5 % CPU, ~500 mach msgs/s, ~700 context switches/s | ~0.6–0.7 % CPU, ~250–300 mach msgs/s, ~230 context switches/s |
+| Bar hidden | not measured | ~0.3 % CPU, ~140 mach msgs/s |
+| Memory | 28 MB RSS | 28 MB RSS |
+
+What changed: one AX call per window instead of five; notification-backed apps re-scanned every
+10 s instead of 2.5 s (frontmost app and apps without an observer still every 2.5 s); trust check
+every 10 s; and the card strip no longer forces a SwiftUI measurement inside `layout()`, which had
+kept AppKit laying out at display refresh rate. Remaining cost is dominated by real events (title
+changes from terminals, app switches) and the 2.5 s scan of the frontmost app. The < 1 % target is
+met in these conditions; a fully idle measurement (no user activity) is still to be recorded.
+
+Spec targets: notified title change ≈ 1 s (debounce 100 ms + AX read); fallback discovery ≈ 3 s for
+apps without notifications (2.5 s scan); idle CPU < 1 %.
