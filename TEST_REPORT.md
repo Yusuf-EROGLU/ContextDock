@@ -15,7 +15,7 @@ person at the Mac, usually because the Accessibility grant is a user action).
 | git | 2.50.1 (Apple Git-155) |
 | Ghostty | 1.3.1 (`com.mitchellh.ghostty`) |
 | Unity | Editors 2021.3–6000.3 via Unity Hub (`com.unity3d.UnityEditor5.x`) |
-| Signing | ad-hoc, sandbox off |
+| Signing | ad-hoc until 2026-09-16 15:30, then self-signed identity `ContextDock Dev` (stable TCC grant); sandbox off |
 
 ## Commands
 
@@ -62,13 +62,13 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | ID | Scenario | Status | Notes |
 |---|---|---|---|
 | A01 | Accessibility not granted | **PASS** | Launched the Debug build without the grant: permission window and the bar's "Accessibility permission required" state appeared (confirmed via the CoreGraphics window list), no crash, no fake windows. |
-| A02 | Permission granted later / revoked | NOT_RUN | Needs a user to toggle the grant. Code path: worker re-checks every scan, tears down sessions on revoke, shows "revoked" state. |
-| A03 | Same app, different PIDs | NOT_RUN | Requires the Accessibility grant. |
-| A04 | Two Ghostty windows under one PID | NOT_RUN | Requires the grant. |
-| A05 | Two windows with identical titles | NOT_RUN (manual) | Automated: WindowTracker/ProjectRule tests. |
-| A06 | Title changes keep name and order | NOT_RUN (manual) | Automated: WindowTracker title tests. |
-| A07 | Action on a closed window's card | NOT_RUN (manual) | Automated: FocusService dead-target test; popup closes with "Window closed". |
-| A08 | Hidden app / minimized window | NOT_RUN | Requires the grant. |
+| A02 | Permission granted later / revoked | **PASS** (grant) | Granting while running started discovery without a relaunch (2026-09-16). Revoke path NOT_RUN. |
+| A03 | Same app, different PIDs | **PASS** | User test 2026-09-16: two Unity Editors shown as separate cards, each switches to its own window. |
+| A04 | Two Ghostty windows under one PID | **PASS** | User test 2026-09-16. |
+| A05 | Two windows with identical titles | **PASS** | User test 2026-09-16 (M1 gate); automated: WindowTracker/ProjectRule tests. |
+| A06 | Title changes keep name and order | **PASS** | User test 2026-09-16; automated: WindowTracker title tests. |
+| A07 | Action on a closed window's card | **PASS** | User test 2026-09-16: card removed, name not migrated. A crash on app quit found during this test was fixed (AX refcon lifetime, commit 37623f2). |
+| A08 | Hidden app / minimized window | **PASS** | User test 2026-09-16. |
 | A09 | Unity main project + linked worktree | NOT_RUN (manual) | Automated: linked-worktree Git test. |
 | A10 | Branch switched in a project | NOT_RUN (manual) | Automated: cache-per-worktree test. |
 | A11 | Detached HEAD / no commits | NOT_RUN (manual) | Automated: Git tests. |
@@ -82,8 +82,8 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | A19 | Ghostty title fixed / overwritten | NOT_RUN | Manual names are independent of titles; README documents the config interaction. |
 | A20 | Stale bridge / PID reused | NOT_RUN (manual) | Automated: bridge matching tests. |
 | A21 | Corrupt settings file | NOT_RUN (manual) | Automated: JSONStore + PersistenceService tests; Settings shows the preserved file. |
-| A22 | Typing right after clicking a card | NOT_RUN | Bar panel has `canBecomeKey == false` and never activates ContextDock. |
-| M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **NOT_RUN** | Requires the Accessibility grant by the user. Steps below. |
+| A22 | Typing right after clicking a card | **PASS** | User test 2026-09-16: keystrokes reach the target window. |
+| M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **PASS** | Reported by the user on 2026-09-16 after granting Accessibility to the `ContextDock Dev`-signed build. |
 
 ### How to run the M1 gate
 
@@ -102,6 +102,10 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 
 ## Performance
 
-Not measured yet (needs the grant and a ~20-window session). Targets from the spec: notified title
+First measurement 2026-09-16 (9 cards, bar visible, idle): **~1.5 % CPU, 28 MB RSS** (`top -l 3 -s 10`).
+Above the < 1 % target; planned fix: read window attributes only on notification and lengthen the
+reconciliation scan for apps that deliver AX notifications reliably.
+
+Earlier note: Targets from the spec: notified title
 change ≈ 1 s, fallback discovery ≈ 3 s, idle CPU < 1 %. Reconciliation interval is 2.5 s while the
 bar is visible and 10 s when hidden; AX notification debounce 150 ms; Git branch refresh 5 s / 30 s.
