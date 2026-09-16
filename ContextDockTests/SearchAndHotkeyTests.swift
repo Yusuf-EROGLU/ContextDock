@@ -55,38 +55,3 @@ struct HotkeyConfigTests {
         #expect(!HotkeyConfig(keyCode: 0, carbonModifiers: 0).hasModifier)
     }
 }
-
-@Suite("Unity process arguments")
-struct UnityProcessArgumentsTests {
-    @Test func parsesProcArgsLayout() {
-        var data = Data()
-        var argc = Int32(3)
-        data.append(Data(bytes: &argc, count: 4))
-        data.append(Data("/Applications/Unity/Unity.app/Contents/MacOS/Unity\0\0\0".utf8))
-        data.append(Data("/Applications/Unity/Unity.app/Contents/MacOS/Unity\0-projectPath\0/Users/me/Worktrees/music game\0ENV=1\0".utf8))
-        let args = UnityProcessArgumentsAdapter.parseProcArgs(data)
-        #expect(args == ["/Applications/Unity/Unity.app/Contents/MacOS/Unity", "-projectPath", "/Users/me/Worktrees/music game"])
-        #expect(UnityProcessArgumentsAdapter.projectPath(in: args ?? []) == "/Users/me/Worktrees/music game")
-    }
-
-    @Test func projectPathVariants() {
-        #expect(UnityProcessArgumentsAdapter.projectPath(in: ["Unity", "-projectpath=/p/x"]) == "/p/x")
-        #expect(UnityProcessArgumentsAdapter.projectPath(in: ["Unity", "-projectPath"]) == nil)
-        #expect(UnityProcessArgumentsAdapter.projectPath(in: ["Unity", "-batchmode"]) == nil)
-    }
-
-    @Test func readsOwnArguments() {
-        let args = UnityProcessArgumentsAdapter.arguments(pid: ProcessInfo.processInfo.processIdentifier)
-        #expect(args?.isEmpty == false)
-    }
-
-    @Test func unityProjectValidation() throws {
-        let base = FileManager.default.temporaryDirectory.appendingPathComponent("cdock-unity-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: base) }
-        try FileManager.default.createDirectory(at: base.appendingPathComponent("Assets"), withIntermediateDirectories: true)
-        #expect(ProjectFolderValidator.validate(base) == .folder(warning: nil))
-        try FileManager.default.createDirectory(at: base.appendingPathComponent("ProjectSettings"), withIntermediateDirectories: true)
-        #expect(ProjectFolderValidator.validate(base) == .unityProject)
-        #expect(ProjectFolderValidator.validate(base.appendingPathComponent("missing")) == .unreadable)
-    }
-}

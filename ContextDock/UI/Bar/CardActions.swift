@@ -1,18 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Builds the card context menu and runs its actions (rename, badge, details, reset,
-/// project folder binding).
+/// Builds context menus for window cards, group cards and group members, and runs their
+/// actions (rename, badge, details, grouping).
 @MainActor
 final class CardActions: NSObject {
     private let store: WindowStore
     private let barState: BarState
     private let popup: PopupPanelPresenter
     private var pendingAnchor: NSRect = .zero
-    private(set) var editingCard: WindowSessionID?
+    private(set) var editingItem: BarItemID?
 
-    /// Installed in M2 by the project binding coordinator.
-    var onAttachProject: ((WindowSessionID) -> Void)?
+    var onActivateWindow: ((WindowSessionID) -> Void)?
+    var onActivateGroup: ((GroupID) -> Void)?
 
     init(store: WindowStore, barState: BarState, popup: PopupPanelPresenter) {
         self.store = store
@@ -20,135 +20,210 @@ final class CardActions: NSObject {
         self.popup = popup
     }
 
-    func menu(for id: WindowSessionID, anchor: NSRect) -> NSMenu {
+    func menu(for target: InteractionTarget, anchor: NSRect) -> NSMenu {
         pendingAnchor = anchor
+        switch target {
+        case .item(.window(let id)):
+            return windowMenu(id, inGroup: store.group(containing: id)?.id)
+        case .item(.group(let id)):
+            return groupMenu(id)
+        case .member(let window, let group):
+            return windowMenu(window, inGroup: group)
+        }
+    }
+
+    private func item(_ title: String, _ selector: Selector, represented: String, enabled: Bool = true) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+        item.target = self
+        item.representedObject = represented
+        item.isEnabled = enabled
+        return item
+    }
+
+    private func windowMenu(_ id: WindowSessionID, inGroup group: GroupID?) -> NSMenu {
         let menu = NSMenu()
-        guard let card = store.card(for: id) else {
+        menu.autoenablesItems = false
+        guard store.card(for: id) != nil else {
             menu.addItem(withTitle: "Window closed", action: nil, keyEquivalent: "")
             return menu
         }
-        let representedID = id.rawValue.uuidString
-
-        func item(_ title: String, _ selector: Selector, enabled: Bool = true) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = self
-            item.representedObject = representedID
-            item.isEnabled = enabled
-            return item
+        let rep = id.rawValue.uuidString
+        if group != nil {
+            menu.addItem(item("Switch to This Window", #selector(activateWindow(_:)), represented: rep))
+            menu.addItem(.separator())
         }
-
-        menu.autoenablesItems = false
-        menu.addItem(item("Rename…", #selector(rename(_:))))
-        menu.addItem(item("Badge & Color…", #selector(badge(_:))))
-        menu.addItem(item("Attach Project Folder…", #selector(attachProject(_:)), enabled: onAttachProject != nil))
-        if card.context.contextSource == .manual {
-            menu.addItem(item("Detach Project Folder", #selector(detachProject(_:))))
+        menu.addItem(item("Rename…", #selector(renameWindow(_:)), represented: rep))
+        menu.addItem(item("Badge & Color…", #selector(badgeWindow(_:)), represented: rep))
+        menu.addItem(.separator())
+        if group != nil {
+            menu.addItem(item("Remove from Group", #selector(removeFromGroup(_:)), represented: rep))
+        } else {
+            let addTo = NSMenuItem(title: "Add to Group", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for group in store.arrangement.groupList {
+                let title = store.groupViewModel(group.id)?.title ?? "Group"
+                submenu.addItem(item(title, #selector(addToGroup(_:)), represented: "\(rep)|\(group.id.rawValue.uuidString)"))
+            }
+            addTo.submenu = submenu
+            addTo.isEnabled = !submenu.items.isEmpty
+            menu.addItem(addTo)
         }
         menu.addItem(.separator())
-        let hasCustomization = store.customizations[id] != nil
-        menu.addItem(item("Reset Customization", #selector(reset(_:)), enabled: hasCustomization))
-        menu.addItem(item("Details…", #selector(details(_:))))
+        menu.addItem(item("Reset Customization", #selector(resetWindow(_:)), represented: rep, enabled: store.customizations[id] != nil))
+        menu.addItem(item("Details…", #selector(details(_:)), represented: rep))
         return menu
     }
 
-    private func cardID(from sender: Any?) -> WindowSessionID? {
-        guard let raw = (sender as? NSMenuItem)?.representedObject as? String, let uuid = UUID(uuidString: raw) else { return nil }
+    private func groupMenu(_ id: GroupID) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        guard let group = store.groupViewModel(id) else { return menu }
+        let rep = id.rawValue.uuidString
+        menu.addItem(item("Open All Windows", #selector(activateGroup(_:)), represented: rep))
+        menu.addItem(.separator())
+        for member in group.members {
+            let entry = item("\(member.applicationName): \(member.title)", #selector(activateWindow(_:)), represented: member.id.rawValue.uuidString)
+            entry.image = store.icon(for: member).map { image in
+                let copy = image.copy() as! NSImage
+                copy.size = NSSize(width: 16, height: 16)
+                return copy
+            }
+            menu.addItem(entry)
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("Rename Group…", #selector(renameGroup(_:)), represented: rep))
+        menu.addItem(item("Badge & Color…", #selector(badgeGroup(_:)), represented: rep))
+        menu.addItem(item("Ungroup", #selector(ungroup(_:)), represented: rep))
+        return menu
+    }
+
+    private func windowID(_ sender: Any?) -> WindowSessionID? {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let uuid = UUID(uuidString: raw.split(separator: "|").first.map(String.init) ?? raw) else { return nil }
         return WindowSessionID(rawValue: uuid)
     }
 
-    private func projectWindowCount(for card: CardViewModel) -> Int {
-        guard let path = card.context.projectPath else { return 0 }
-        return store.cards.filter { $0.context.hasTrustedProjectPath && $0.context.projectPath == path && $0.applicationKind == card.applicationKind }.count
+    private func groupID(_ sender: Any?) -> GroupID? {
+        guard let raw = (sender as? NSMenuItem)?.representedObject as? String,
+              let uuid = UUID(uuidString: raw.split(separator: "|").last.map(String.init) ?? raw) else { return nil }
+        return GroupID(rawValue: uuid)
     }
 
-    @objc private func rename(_ sender: Any?) {
-        guard let id = cardID(from: sender), let card = store.card(for: id) else { return }
-        editingCard = id
-        let canRemember = card.context.hasTrustedProjectPath
+    // MARK: - Window actions
+
+    @objc private func activateWindow(_ sender: Any?) {
+        guard let id = windowID(sender) else { return }
+        onActivateWindow?(id)
+    }
+
+    @objc private func renameWindow(_ sender: Any?) {
+        guard let id = windowID(sender), let card = store.card(for: id) else { return }
+        editingItem = .window(id)
         let view = RenameView(
-            card: card,
-            canRememberForProject: canRemember,
-            projectWindowCount: projectWindowCount(for: card),
+            heading: "Rename “\(card.rawTitle ?? card.applicationName)”",
+            hint: "The name lives while this window and ContextDock are open.",
             name: store.customizations[id]?.name ?? "",
-            onSave: { [weak self] name, scope in
-                guard let self else { return }
+            onSave: { [weak self] name in
                 let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                switch scope {
-                case .window:
-                    store.rename(id, to: trimmed.isEmpty ? nil : trimmed)
-                case .project:
-                    if let path = card.context.projectPath {
-                        store.upsertRule(kind: card.applicationKind, projectPath: path) { rule in
-                            rule.customLabel = trimmed.isEmpty ? nil : trimmed
-                        }
-                        store.rename(id, to: nil)
-                    }
-                }
-                self.finishEditing()
+                self?.store.rename(id, to: trimmed.isEmpty ? nil : trimmed)
+                self?.finishEditing()
             },
             onCancel: { [weak self] in self?.finishEditing() }
         )
-        popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 340, height: 200))
+        popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 340, height: 160))
     }
 
-    @objc private func badge(_ sender: Any?) {
-        guard let id = cardID(from: sender), let card = store.card(for: id) else { return }
-        editingCard = id
+    @objc private func badgeWindow(_ sender: Any?) {
+        guard let id = windowID(sender), let card = store.card(for: id) else { return }
+        editingItem = .window(id)
         let view = BadgePickerView(
-            card: card,
-            canRememberForProject: card.context.hasTrustedProjectPath,
+            heading: "Badge & Color for “\(card.title)”",
             badge: card.badge,
             color: card.colorToken,
-            onApply: { [weak self] badge, color, scope in
-                guard let self else { return }
-                switch scope {
-                case .window:
-                    store.setBadge(id, badge: badge, color: color)
-                case .project:
-                    if let path = card.context.projectPath {
-                        store.upsertRule(kind: card.applicationKind, projectPath: path) { rule in
-                            rule.badge = badge
-                            rule.colorToken = color == ColorToken.none ? nil : color
-                        }
-                        store.setBadge(id, badge: nil, color: ColorToken.none)
-                    }
-                }
-                self.finishEditing()
+            onApply: { [weak self] badge, color in
+                self?.store.setBadge(id, badge: badge, color: color)
+                self?.finishEditing()
             },
             onCancel: { [weak self] in self?.finishEditing() }
         )
         popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 320, height: 380))
     }
 
-    @objc private func attachProject(_ sender: Any?) {
-        guard let id = cardID(from: sender) else { return }
-        onAttachProject?(id)
+    @objc private func removeFromGroup(_ sender: Any?) {
+        guard let id = windowID(sender) else { return }
+        store.removeFromGroup(id)
     }
 
-    @objc private func detachProject(_ sender: Any?) {
-        guard let id = cardID(from: sender) else { return }
-        store.bindProject(id, binding: nil)
+    @objc private func addToGroup(_ sender: Any?) {
+        guard let window = windowID(sender), let group = groupID(sender) else { return }
+        store.stack(.window(window), onto: .group(group))
     }
 
-    @objc private func reset(_ sender: Any?) {
-        guard let id = cardID(from: sender) else { return }
+    @objc private func resetWindow(_ sender: Any?) {
+        guard let id = windowID(sender) else { return }
         store.resetCustomization(id)
     }
 
     @objc private func details(_ sender: Any?) {
-        guard let id = cardID(from: sender), let card = store.card(for: id) else { return }
-        editingCard = id
+        guard let id = windowID(sender), let card = store.card(for: id) else { return }
+        editingItem = .window(id)
         let view = WindowDetailsView(
             card: card,
             window: store.windowSnapshot(for: id),
             customization: store.customizations[id],
+            group: store.group(containing: id),
             onClose: { [weak self] in self?.finishEditing() }
         )
         popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 460, height: 400))
     }
 
+    // MARK: - Group actions
+
+    @objc private func activateGroup(_ sender: Any?) {
+        guard let id = groupID(sender) else { return }
+        onActivateGroup?(id)
+    }
+
+    @objc private func renameGroup(_ sender: Any?) {
+        guard let id = groupID(sender), let group = store.groupViewModel(id) else { return }
+        editingItem = .group(id)
+        let view = RenameView(
+            heading: "Rename group “\(group.title)”",
+            hint: "Groups last for this ContextDock session.",
+            name: store.group(id)?.name ?? "",
+            onSave: { [weak self] name in
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                self?.store.renameGroup(id, to: trimmed.isEmpty ? nil : trimmed)
+                self?.finishEditing()
+            },
+            onCancel: { [weak self] in self?.finishEditing() }
+        )
+        popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 340, height: 160))
+    }
+
+    @objc private func badgeGroup(_ sender: Any?) {
+        guard let id = groupID(sender), let group = store.groupViewModel(id) else { return }
+        editingItem = .group(id)
+        let view = BadgePickerView(
+            heading: "Badge & Color for group “\(group.title)”",
+            badge: group.badge,
+            color: group.colorToken,
+            onApply: { [weak self] badge, color in
+                self?.store.setGroupBadge(id, badge: badge, color: color)
+                self?.finishEditing()
+            },
+            onCancel: { [weak self] in self?.finishEditing() }
+        )
+        popup.present(view, near: pendingAnchor, preferredSize: NSSize(width: 320, height: 380))
+    }
+
+    @objc private func ungroup(_ sender: Any?) {
+        guard let id = groupID(sender) else { return }
+        store.ungroup(id)
+    }
+
     private func finishEditing() {
-        editingCard = nil
+        editingItem = nil
         popup.dismiss()
     }
 }

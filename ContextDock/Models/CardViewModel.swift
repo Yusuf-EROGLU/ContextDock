@@ -1,6 +1,6 @@
 import Foundation
 
-/// Everything one card renders. Pure data; produced by `CardPresenter`.
+/// Everything one window card renders. Pure data; produced by `CardPresenter`.
 struct CardViewModel: Sendable, Hashable, Identifiable {
     let id: WindowSessionID
     let process: ProcessInstanceKey
@@ -12,7 +12,6 @@ struct CardViewModel: Sendable, Hashable, Identifiable {
     let badge: Badge?
     let colorToken: ColorToken
     let rawTitle: String?
-    let projectPath: String?
     let isMinimized: Bool
     let isAppHidden: Bool
     let isActive: Bool
@@ -22,8 +21,33 @@ struct CardViewModel: Sendable, Hashable, Identifiable {
     let accessibilityLabel: String
 }
 
-/// Pure resolution of what a card shows, following the spec priority:
-/// window custom name → project rule → automatic context → window title.
+/// A group card: name/badge plus its member cards in raise order.
+struct GroupViewModel: Sendable, Hashable, Identifiable {
+    let id: GroupID
+    let title: String
+    let subtitle: String
+    let badge: Badge?
+    let colorToken: ColorToken
+    let members: [CardViewModel]
+    let hasCustomName: Bool
+    let isActive: Bool
+    let accessibilityLabel: String
+}
+
+/// One entry of the bar in display order.
+enum BarItem: Sendable, Hashable, Identifiable {
+    case window(CardViewModel)
+    case group(GroupViewModel)
+
+    var id: BarItemID {
+        switch self {
+        case .window(let card): return .window(card.id)
+        case .group(let group): return .group(group.id)
+        }
+    }
+}
+
+/// Pure resolution of what a card shows: custom name → automatic context → window title.
 enum CardPresenter {
     static let untitledWindowLabel = "Untitled window"
 
@@ -31,28 +55,15 @@ enum CardPresenter {
         window: WindowSnapshot,
         process: ProcessSnapshot,
         customization: SessionCustomization?,
-        rule: ProjectRule?,
         context: WindowContext
     ) -> CardViewModel {
-        let ruleApplies = rule != nil && context.hasTrustedProjectPath
-        let appliedRule = ruleApplies ? rule : nil
-
         let customName = nonEmpty(customization?.name)
-        let ruleLabel = nonEmpty(appliedRule?.customLabel)
         let structured = nonEmpty(context.structuredLabel)
         let projectName = nonEmpty(context.projectDisplayName)
         let rawTitle = nonEmpty(window.title)
 
-        let title = customName ?? ruleLabel ?? structured ?? projectName ?? rawTitle ?? untitledWindowLabel
-        let subtitle = subtitleLine(
-            context: context,
-            rawTitle: rawTitle,
-            usedTitle: title,
-            applicationName: process.applicationName
-        )
-
-        let badge = customization?.badge ?? appliedRule?.badge
-        let color = customization?.colorToken ?? appliedRule?.colorToken ?? .none
+        let title = customName ?? structured ?? projectName ?? rawTitle ?? untitledWindowLabel
+        let subtitle = subtitleLine(context: context, rawTitle: rawTitle, usedTitle: title, applicationName: process.applicationName)
         let isActive = process.isActive && (window.isFocused || window.isMain)
 
         var a11y = "\(process.applicationName), \(title)"
@@ -69,10 +80,9 @@ enum CardPresenter {
             bundleIdentifier: process.bundleIdentifier,
             title: title,
             subtitle: subtitle,
-            badge: badge,
-            colorToken: color,
+            badge: customization?.badge,
+            colorToken: customization?.colorToken ?? .none,
             rawTitle: rawTitle,
-            projectPath: context.projectPath,
             isMinimized: window.isMinimized,
             isAppHidden: process.isHidden,
             isActive: isActive,
@@ -83,57 +93,47 @@ enum CardPresenter {
         )
     }
 
-    /// Second line: Git line for a trusted project path, otherwise the raw window title
-    /// (or the app name when the title is already used on the first line).
-    static func subtitleLine(
-        context: WindowContext,
-        rawTitle: String?,
-        usedTitle: String,
-        applicationName: String
-    ) -> String? {
-        if context.hasTrustedProjectPath, let line = gitLine(context: context) {
-            return line
+    /// Second line: project/branch text from an automatic source when available, otherwise the
+    /// raw title (or the app name when the title is already used on the first line).
+    static func subtitleLine(context: WindowContext, rawTitle: String?, usedTitle: String, applicationName: String) -> String? {
+        var parts: [String] = []
+        if let project = nonEmpty(context.projectDisplayName), project != usedTitle { parts.append(project) }
+        if let branch = nonEmpty(context.branchName) { parts.append(branch) }
+        if !parts.isEmpty {
+            return parts.joined(separator: " · ") + (context.isStale ? " (stale)" : "")
         }
         if let rawTitle, rawTitle != usedTitle {
             return rawTitle
         }
-        if let branch = nonEmpty(context.branchName), context.contextSource == .structuredTitle {
-            return branch
-        }
         return applicationName
     }
 
-    static func gitLine(context: WindowContext) -> String? {
-        let folder = context.worktreeRoot.map { URL(fileURLWithPath: $0).lastPathComponent }
-            ?? context.projectPath.map { URL(fileURLWithPath: $0).lastPathComponent }
-        let staleSuffix = context.gitIsStale ? " (stale)" : ""
-
-        switch context.gitStatus {
-        case nil:
-            return folder
-        case .ok:
-            let branchPart: String
-            if context.isDetached == true {
-                branchPart = "detached · \(context.shortCommit ?? "?")"
-            } else if let branch = nonEmpty(context.branchName) {
-                branchPart = context.isUnborn == true ? "\(branch) · no commits" : branch
-            } else {
-                branchPart = "unknown"
-            }
-            if let folder { return "\(folder) · \(branchPart)\(staleSuffix)" }
-            return branchPart + staleSuffix
-        case .notARepository:
-            return [folder, "not a Git repository"].compactMap { $0 }.joined(separator: " · ")
-        case .gitMissing:
-            return [folder, "Git not found"].compactMap { $0 }.joined(separator: " · ")
-        case .noAccess:
-            return [folder, "no access"].compactMap { $0 }.joined(separator: " · ")
-        case .unknown:
-            return [folder, "unknown\(staleSuffix)"].compactMap { $0 }.joined(separator: " · ")
-        }
+    static func resolveGroup(_ group: WindowGroup, members: [CardViewModel]) -> GroupViewModel {
+        let customName = nonEmpty(group.name)
+        let apps = orderedUnique(members.map(\.applicationName))
+        let title = customName ?? apps.joined(separator: " + ")
+        let subtitle = "\(members.count) windows" + (customName != nil ? " · \(apps.joined(separator: ", "))" : "")
+        let isActive = members.contains { $0.isActive }
+        let a11y = "Group \(title), \(members.count) windows: " + members.map { "\($0.applicationName) \($0.title)" }.joined(separator: ", ")
+        return GroupViewModel(
+            id: group.id,
+            title: title,
+            subtitle: subtitle,
+            badge: group.badge,
+            colorToken: group.colorToken ?? .none,
+            members: members,
+            hasCustomName: customName != nil,
+            isActive: isActive,
+            accessibilityLabel: a11y
+        )
     }
 
-    private static func nonEmpty(_ value: String?) -> String? {
+    private static func orderedUnique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    static func nonEmpty(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

@@ -19,7 +19,6 @@ final class Preferences {
         static let screenSelection = "screenSelection"
         static let showAuxiliaryWindows = "showAuxiliaryWindows"
         static let debugLogging = "debugLogging"
-        static let readProcessArguments = "readProcessArguments"
         static let barLevelAboveFullScreen = "barLevelAboveFullScreen"
     }
 
@@ -36,7 +35,6 @@ final class Preferences {
     }
     var showAuxiliaryWindows: Bool { didSet { defaults.set(showAuxiliaryWindows, forKey: Keys.showAuxiliaryWindows) } }
     var debugLogging: Bool { didSet { defaults.set(debugLogging, forKey: Keys.debugLogging) } }
-    var readProcessArguments: Bool { didSet { defaults.set(readProcessArguments, forKey: Keys.readProcessArguments) } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -45,13 +43,11 @@ final class Preferences {
             Keys.bottomMargin: 12.0,
             Keys.showAuxiliaryWindows: false,
             Keys.debugLogging: false,
-            Keys.readProcessArguments: true,
         ])
         barVisible = defaults.bool(forKey: Keys.barVisible)
         bottomMargin = defaults.double(forKey: Keys.bottomMargin)
         showAuxiliaryWindows = defaults.bool(forKey: Keys.showAuxiliaryWindows)
         debugLogging = defaults.bool(forKey: Keys.debugLogging)
-        readProcessArguments = defaults.bool(forKey: Keys.readProcessArguments)
         if let data = defaults.data(forKey: Keys.screenSelection),
            let selection = try? JSONDecoder().decode(ScreenSelection.self, from: data) {
             screenSelection = selection

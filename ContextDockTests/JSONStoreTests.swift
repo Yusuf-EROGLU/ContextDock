@@ -16,12 +16,12 @@ struct JSONStoreTests {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let store = JSONStore<PersistedState>(url: url, currentSchemaVersion: PersistedState.currentSchemaVersion)
         var state = PersistedState()
-        state.projectRules = [ProjectRule(id: UUID(), applicationKind: .unityEditor, projectPath: "/p/Müzik Oyunu", customLabel: "Ses", badge: .emoji("🧪"), colorToken: .purple, createdAt: Date(), updatedAt: Date())]
+        state.hotkey = HotkeyConfig(keyCode: 12, carbonModifiers: HotkeyConfig.commandKeyBit | HotkeyConfig.shiftKeyBit)
         try store.save(state)
         try store.save(state)
         guard case .loaded(let loaded) = store.load() else { Issue.record("expected loaded"); return }
-        #expect(loaded.projectRules.count == 1)
-        #expect(loaded.projectRules[0].customLabel == "Ses")
+        #expect(loaded.hotkey == state.hotkey)
+        #expect(loaded.schemaVersion == PersistedState.currentSchemaVersion)
         let files = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
         #expect(files == ["state.json"])
     }
@@ -69,7 +69,7 @@ struct JSONStoreTests {
         let service = PersistenceService(fileURL: url)
         #expect(service.isReadOnly)
         #expect(service.status == .readOnlyNewerSchema(found: 42))
-        service.update { $0.projectRules.append(ProjectRule(id: UUID(), applicationKind: .ghostty, projectPath: "/x", customLabel: nil, badge: nil, colorToken: nil, createdAt: Date(), updatedAt: Date())) }
+        service.update { $0.hotkey = HotkeyConfig.default }
         service.flush()
         #expect(try Data(contentsOf: url) == original)
     }

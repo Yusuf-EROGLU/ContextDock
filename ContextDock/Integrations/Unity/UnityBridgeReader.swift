@@ -132,13 +132,7 @@ final class UnityBridgeMonitor {
         let assigned = UnityBridgeMatcher.assign(reports: reports, to: Array(unityKeys), now: now)
         for key in unityKeys {
             if let match = assigned[key] {
-                // Only verified project folders are trusted for Git and rules.
-                let validation = ProjectFolderValidator.validate(URL(fileURLWithPath: match.report.projectPath))
-                if validation == .unreadable {
-                    store.setBridgeReport(nil, isStale: false, for: key)
-                } else {
-                    store.setBridgeReport(match.report, isStale: match.isStale, for: key)
-                }
+                store.setBridgeReport(match.report, isStale: match.isStale, for: key)
             } else {
                 store.setBridgeReport(nil, isStale: false, for: key)
             }

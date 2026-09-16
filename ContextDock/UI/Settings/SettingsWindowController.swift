@@ -6,7 +6,6 @@ struct SettingsView: View {
     @Bindable var store: WindowStore
     @Bindable var persistence: PersistenceService
     var onResetAll: () -> Void
-    var onDeleteRule: (UUID) -> Void
     var hotkeySection: AnyView?
 
     var body: some View {
@@ -34,41 +33,19 @@ struct SettingsView: View {
             }
             Section("Windows") {
                 Toggle("Show auxiliary windows (dialogs, floating tool windows)", isOn: $preferences.showAuxiliaryWindows)
-                Toggle("Read Unity project path from process arguments", isOn: $preferences.readProcessArguments)
-            }
-            Section("Project rules") {
-                if persistence.state.projectRules.isEmpty {
-                    Text("No saved project rules. Use “Remember for this project” after attaching a project folder.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(persistence.state.projectRules) { rule in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(rule.customLabel ?? URL(fileURLWithPath: rule.projectPath).lastPathComponent)
-                                Text("\(rule.applicationKind.displayName) · \(rule.projectPath)")
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                            }
-                            Spacer()
-                            if let badge = rule.badge {
-                                if badge.kind == .emoji { Text(badge.value) } else { Image(systemName: badge.value) }
-                            }
-                            Button(role: .destructive) { onDeleteRule(rule.id) } label: { Image(systemName: "trash") }
-                                .buttonStyle(.borderless)
-                                .help("Delete rule")
-                        }
-                    }
-                }
-                persistenceStatus
+                Text("Drag a card onto another to group them; click a group to bring all of its windows forward. Names and groups last for this ContextDock session.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Advanced") {
-                Toggle("Verbose debug logging (includes titles and paths in the unified log)", isOn: $preferences.debugLogging)
-                Button("Reset all customizations…", role: .destructive) { onResetAll() }
+                Toggle("Verbose debug logging (includes titles in the unified log)", isOn: $preferences.debugLogging)
+                Button("Reset all names, badges and groups…", role: .destructive) { onResetAll() }
+                persistenceStatus
                 Text("Data: \(PersistenceService.applicationSupportDirectory.path)")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 560)
+        .frame(width: 520, height: 460)
     }
 
     @ViewBuilder

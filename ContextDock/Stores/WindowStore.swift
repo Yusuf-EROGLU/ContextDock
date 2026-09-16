@@ -2,21 +2,17 @@ import AppKit
 import Observation
 
 /// Main-actor source of truth for the UI: latest discovery snapshot, session customizations,
-/// persisted project rules and per-window contexts, merged into `CardViewModel`s.
+/// groups/order and automatic contexts, merged into bar items.
 @MainActor
 @Observable
 final class WindowStore {
     private(set) var snapshot: DiscoverySnapshot = .empty
     private(set) var cards: [CardViewModel] = []
+    private(set) var items: [BarItem] = []
     private(set) var permission: PermissionState = .unknown
     private(set) var hasReceivedSnapshot = false
+    private(set) var arrangement = BarArrangement()
 
-    /// Automatic (non-manual) context sources keyed by window, filled by adapters (M2/M3).
-    private(set) var automaticInputs: [WindowSessionID: ContextInputs] = [:]
-    /// Git facts keyed by normalized worktree/project path (M2).
-    private(set) var gitInfo: [String: GitInfo] = [:]
-    /// Unity `-projectPath` hints keyed by process instance (M2, optional adapter).
-    private(set) var processArgumentHints: [ProcessInstanceKey: ProcessArgumentsHint] = [:]
     /// Unity bridge reports keyed by process instance (M3).
     private(set) var bridgeReports: [ProcessInstanceKey: (report: UnityBridgeReport, isStale: Bool)] = [:]
 
@@ -25,7 +21,7 @@ final class WindowStore {
     let apps: RunningAppsProvider
 
     var onWindowsRemoved: (@MainActor (Set<WindowSessionID>) -> Void)?
-    var onCardsChanged: (@MainActor () -> Void)?
+    var onItemsChanged: (@MainActor () -> Void)?
 
     init(customizations: SessionCustomizationStore, persistence: PersistenceService, apps: RunningAppsProvider) {
         self.customizations = customizations
@@ -45,28 +41,27 @@ final class WindowStore {
         let removed = previousIDs.subtracting(liveIDs)
         if !removed.isEmpty {
             customizations.purge(keeping: liveIDs)
-            for id in removed { automaticInputs[id] = nil }
             onWindowsRemoved?(removed)
         }
         let liveKeys = Set(newSnapshot.processes.keys)
-        for key in processArgumentHints.keys where !liveKeys.contains(key) {
-            processArgumentHints[key] = nil
-        }
         for key in bridgeReports.keys where !liveKeys.contains(key) {
             bridgeReports[key] = nil
         }
-        rebuildCards()
+        arrangement.sync(windowsInFirstSeenOrder: newSnapshot.windows.map(\.id))
+        for window in newSnapshot.windows where window.isFocused && newSnapshot.processes[window.process]?.isActive == true {
+            arrangement.noteFocused(window.id)
+        }
+        rebuild()
     }
 
     var processKeys: Set<ProcessInstanceKey> { Set(snapshot.processes.keys) }
-
     func process(for key: ProcessInstanceKey) -> ProcessSnapshot? { snapshot.processes[key] }
 
     // MARK: - Customization
 
     func rename(_ id: WindowSessionID, to name: String?) {
         customizations.update(id) { $0.name = name?.isEmpty == true ? nil : name }
-        rebuildCards()
+        rebuild()
     }
 
     func setBadge(_ id: WindowSessionID, badge: Badge?, color: ColorToken?) {
@@ -74,108 +69,87 @@ final class WindowStore {
             $0.badge = badge
             $0.colorToken = color == ColorToken.none ? nil : color
         }
-        rebuildCards()
-    }
-
-    func bindProject(_ id: WindowSessionID, binding: ProjectBinding?) {
-        let target = card(for: id)
-        var affected: [WindowSessionID] = [id]
-        if binding?.scope == .processInstance, let target {
-            affected = cards.filter { $0.process == target.process }.map(\.id)
-        }
-        for windowID in affected {
-            customizations.update(windowID) { $0.projectBinding = binding }
-        }
-        rebuildCards()
+        rebuild()
     }
 
     func resetCustomization(_ id: WindowSessionID) {
         customizations.reset(id)
-        rebuildCards()
+        rebuild()
     }
 
-    func resetAllCustomizations(includingRules: Bool) {
+    func resetAllCustomizations() {
         customizations.resetAll()
-        if includingRules {
-            persistence.update { $0.projectRules.removeAll() }
+        for group in arrangement.groupList {
+            arrangement.ungroup(group.id)
         }
-        rebuildCards()
+        rebuild()
     }
 
-    // MARK: - Project rules
+    // MARK: - Groups and order
 
-    func rule(for key: ContextKey) -> ProjectRule? {
-        persistence.state.projectRules.first { $0.contextKey == key }
+    @discardableResult
+    func stack(_ dragged: BarItemID, onto target: BarItemID) -> GroupID? {
+        let result = arrangement.stack(dragged, onto: target)
+        rebuild()
+        return result
     }
 
-    func upsertRule(kind: ApplicationKind, projectPath: String, mutate: (inout ProjectRule) -> Void) {
-        let key = ContextKey(applicationKind: kind, projectPath: projectPath)
-        persistence.update { state in
-            if let index = state.projectRules.firstIndex(where: { $0.contextKey == key }) {
-                mutate(&state.projectRules[index])
-                state.projectRules[index].updatedAt = Date()
-            } else {
-                var rule = ProjectRule(
-                    id: UUID(),
-                    applicationKind: kind,
-                    projectPath: key.normalizedProjectPath,
-                    customLabel: nil,
-                    badge: nil,
-                    colorToken: nil,
-                    createdAt: Date(),
-                    updatedAt: Date()
-                )
-                mutate(&rule)
-                state.projectRules.append(rule)
-            }
+    func move(_ item: BarItemID, before target: BarItemID?) {
+        arrangement.move(item, before: target)
+        rebuild()
+    }
+
+    func removeFromGroup(_ window: WindowSessionID) {
+        arrangement.removeFromGroup(window)
+        rebuild()
+    }
+
+    func ungroup(_ id: GroupID) {
+        arrangement.ungroup(id)
+        rebuild()
+    }
+
+    func renameGroup(_ id: GroupID, to name: String?) {
+        arrangement.update(id) { $0.name = name?.isEmpty == true ? nil : name }
+        rebuild()
+    }
+
+    func setGroupBadge(_ id: GroupID, badge: Badge?, color: ColorToken?) {
+        arrangement.update(id) {
+            $0.badge = badge
+            $0.colorToken = color == ColorToken.none ? nil : color
         }
-        rebuildCards()
+        rebuild()
     }
 
-    func deleteRule(id: UUID) {
-        persistence.update { $0.projectRules.removeAll { $0.id == id } }
-        rebuildCards()
+    func noteFocused(_ window: WindowSessionID) {
+        arrangement.noteFocused(window)
     }
+
+    func group(_ id: GroupID) -> WindowGroup? { arrangement.group(id) }
+    func group(containing window: WindowSessionID) -> WindowGroup? { arrangement.group(containing: window) }
 
     // MARK: - Automatic context inputs (adapters)
-
-    func setAutomaticInputs(_ inputs: ContextInputs?, for id: WindowSessionID) {
-        automaticInputs[id] = inputs
-        rebuildCards()
-    }
-
-    func setProcessArgumentsHint(_ hint: ProcessArgumentsHint?, for key: ProcessInstanceKey) {
-        if processArgumentHints[key] != hint {
-            processArgumentHints[key] = hint
-            rebuildCards()
-        }
-    }
 
     func setBridgeReport(_ report: UnityBridgeReport?, isStale: Bool, for key: ProcessInstanceKey) {
         let existing = bridgeReports[key]
         if existing?.report != report || existing?.isStale != isStale {
             bridgeReports[key] = report.map { ($0, isStale) }
-            rebuildCards()
+            rebuild()
         }
-    }
-
-    func setGitInfo(_ info: GitInfo?, for path: String) {
-        let key = PathNormalizer.normalize(path)
-        if gitInfo[key] != info {
-            gitInfo[key] = info
-            rebuildCards()
-        }
-    }
-
-    /// Trusted project paths currently shown (for Git refresh scheduling).
-    var trustedProjectPaths: Set<String> {
-        Set(cards.compactMap { $0.context.hasTrustedProjectPath ? $0.context.projectPath : nil })
     }
 
     // MARK: - Queries
 
     func card(for id: WindowSessionID) -> CardViewModel? {
         cards.first { $0.id == id }
+    }
+
+    func groupViewModel(_ id: GroupID) -> GroupViewModel? {
+        for item in items {
+            if case .group(let group) = item, group.id == id { return group }
+        }
+        return nil
     }
 
     func windowSnapshot(for id: WindowSessionID) -> WindowSnapshot? {
@@ -186,48 +160,47 @@ final class WindowStore {
         apps.icon(for: card.process.pid)
     }
 
-    func context(for id: WindowSessionID) -> WindowContext {
-        card(for: id)?.context ?? .none()
+    func icon(for window: WindowSessionID) -> NSImage? {
+        card(for: window).flatMap { icon(for: $0) }
     }
 
     // MARK: - Merge
 
-    func rebuildCards() {
-        var result: [CardViewModel] = []
-        result.reserveCapacity(snapshot.windows.count)
+    func rebuild() {
+        var newCards: [CardViewModel] = []
+        newCards.reserveCapacity(snapshot.windows.count)
         for window in snapshot.windows {
             guard let process = snapshot.processes[window.process] else { continue }
-            let customization = customizations[window.id]
-            var inputs = automaticInputs[window.id] ?? ContextInputs()
-            inputs.manual = customization?.projectBinding
-            if inputs.processArguments == nil { inputs.processArguments = processArgumentHints[window.process] }
-            if inputs.bridge == nil, let bridge = bridgeReports[window.process] {
+            var inputs = ContextInputs()
+            inputs.rawTitle = window.title
+            if let bridge = bridgeReports[window.process] {
                 inputs.bridge = bridge.report
                 inputs.bridgeIsStale = bridge.isStale
             }
-            inputs.rawTitle = window.title
-            if inputs.structuredTitle == nil, let title = window.title {
+            if let title = window.title {
                 inputs.structuredTitle = StructuredTitleParser.parse(title)
             }
-            var context = ContextResolver.resolve(inputs)
-            if context.hasTrustedProjectPath, let path = context.projectPath {
-                inputs.git = gitInfo[PathNormalizer.normalize(path)]
-                context = ContextResolver.resolve(inputs)
+            let context = ContextResolver.resolve(inputs)
+            newCards.append(CardPresenter.resolve(window: window, process: process, customization: customizations[window.id], context: context))
+        }
+        let byID = Dictionary(uniqueKeysWithValues: newCards.map { ($0.id, $0) })
+
+        var newItems: [BarItem] = []
+        for entry in arrangement.order {
+            switch entry {
+            case .window(let id):
+                if let card = byID[id] { newItems.append(.window(card)) }
+            case .group(let id):
+                guard let group = arrangement.group(id) else { continue }
+                let members = group.members.compactMap { byID[$0] }
+                guard !members.isEmpty else { continue }
+                newItems.append(.group(CardPresenter.resolveGroup(group, members: members)))
             }
-            let rule = context.hasTrustedProjectPath && context.projectPath != nil
-                ? self.rule(for: ContextKey(applicationKind: process.kind, projectPath: context.projectPath!))
-                : nil
-            result.append(CardPresenter.resolve(
-                window: window,
-                process: process,
-                customization: customization,
-                rule: rule,
-                context: context
-            ))
         }
-        if result != cards {
-            cards = result
-            onCardsChanged?()
-        }
+
+        let changed = newCards != cards || newItems != items
+        cards = newCards
+        items = newItems
+        if changed { onItemsChanged?() }
     }
 }

@@ -1,17 +1,36 @@
 import AppKit
 import Observation
 
-/// Transient UI state of the bar (hover, keyboard selection, toast). Main actor only.
+/// Transient UI state of the bar (hover, keyboard selection, toast, drag). Main actor only.
 @MainActor
 @Observable
 final class BarState {
-    var hoveredCard: WindowSessionID?
-    var keyboardSelectedCard: WindowSessionID?
+    var hoveredItem: BarItemID?
+    var keyboardSelectedItem: BarItemID?
     var toast: Toast?
+    var drag: DragState?
 
     struct Toast: Equatable {
         var message: String
         var isError: Bool
+    }
+
+    /// Where a dragged card would land.
+    enum DropTarget: Equatable {
+        /// Stack onto this item (creates or extends a group).
+        case stack(BarItemID)
+        /// Insert before this item (reorder); `nil` = end of the bar.
+        case insert(before: BarItemID?)
+        /// Pull a window out of its group.
+        case detach
+    }
+
+    struct DragState: Equatable {
+        var item: BarItemID
+        /// Current pointer location in the bar view's (top-left origin) coordinates.
+        var location: CGPoint
+        var target: DropTarget?
+        var fromGroup: GroupID?
     }
 
     private var toastTask: Task<Void, Never>?

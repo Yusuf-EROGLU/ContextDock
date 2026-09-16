@@ -118,7 +118,8 @@ final class SearchPanelController {
     private var panel: KeyablePanel?
     private var monitor: Any?
     private var previousFrontmostPid: pid_t?
-    var onChoose: ((WindowSessionID) -> Void)?
+    var onChoose: ((BarItemID) -> Void)?
+    private var candidateItems: [WindowSessionID: BarItemID] = [:]
 
     init(store: WindowStore, preferences: Preferences) {
         self.store = store
@@ -133,17 +134,34 @@ final class SearchPanelController {
 
     func show() {
         previousFrontmostPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        model.candidates = store.cards.enumerated().map { index, card in
-            SearchCandidate(
-                id: card.id,
-                order: index,
-                label: card.title,
-                applicationName: card.applicationName,
-                title: card.rawTitle,
-                projectName: card.context.projectDisplayName,
-                branch: card.context.branchName
-            )
+        var candidates: [SearchCandidate] = []
+        candidateItems.removeAll()
+        for (index, item) in store.items.enumerated() {
+            switch item {
+            case .window(let card):
+                candidates.append(SearchCandidate(
+                    id: card.id, order: index * 100, label: card.title, applicationName: card.applicationName,
+                    title: card.rawTitle, projectName: card.context.projectDisplayName, branch: card.context.branchName
+                ))
+                candidateItems[card.id] = .window(card.id)
+            case .group(let group):
+                // The group itself is searchable through a synthetic id; its members follow.
+                let groupKey = WindowSessionID(rawValue: group.id.rawValue)
+                candidates.append(SearchCandidate(
+                    id: groupKey, order: index * 100, label: group.title, applicationName: "Group",
+                    title: group.members.map(\.title).joined(separator: ", "), projectName: nil, branch: nil
+                ))
+                candidateItems[groupKey] = .group(group.id)
+                for (offset, member) in group.members.enumerated() {
+                    candidates.append(SearchCandidate(
+                        id: member.id, order: index * 100 + offset + 1, label: member.title, applicationName: member.applicationName,
+                        title: member.rawTitle, projectName: member.context.projectDisplayName, branch: member.context.branchName
+                    ))
+                    candidateItems[member.id] = .window(member.id)
+                }
+            }
         }
+        model.candidates = candidates
         model.query = ""
         model.selectedIndex = 0
 
@@ -168,7 +186,7 @@ final class SearchPanelController {
 
     private func choose(_ id: WindowSessionID) {
         dismiss()
-        onChoose?(id)
+        if let item = candidateItems[id] { onChoose?(item) }
     }
 
     private func dismiss() {
@@ -179,8 +197,11 @@ final class SearchPanelController {
     private func makePanel() -> KeyablePanel {
         let panel = KeyablePanel()
         let view = SearchView(model: model, icon: { [weak self] id in
-            guard let self, let card = self.store.card(for: id) else { return nil }
-            return self.store.icon(for: card)
+            guard let self else { return nil }
+            if case .group = self.candidateItems[id] {
+                return NSImage(systemSymbolName: "square.stack.3d.up.fill", accessibilityDescription: "Group")
+            }
+            return self.store.icon(for: id)
         }, onChoose: { [weak self] id in self?.choose(id) })
         let hosting = NSHostingView(rootView: view)
         hosting.sizingOptions = [.intrinsicContentSize]

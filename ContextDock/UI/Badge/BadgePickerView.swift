@@ -1,13 +1,11 @@
 import SwiftUI
 
 struct BadgePickerView: View {
-    let card: CardViewModel
-    let canRememberForProject: Bool
+    let heading: String
     @State var badge: Badge?
     @State var color: ColorToken
-    @State var scope: CustomizationScope = .window
     @State private var customEmoji = ""
-    var onApply: (Badge?, ColorToken, CustomizationScope) -> Void
+    var onApply: (Badge?, ColorToken) -> Void
     var onCancel: () -> Void
 
     static let emojis = ["🎮", "🎵", "🧪", "🚀", "🐛", "🔥", "⭐️", "🧱", "🛠️", "📦", "🌱", "💡", "🎯", "🧭", "🔬", "📝"]
@@ -15,15 +13,11 @@ struct BadgePickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Badge & Color")
-                .font(.headline)
-            Text("Emoji")
-                .font(.caption).foregroundStyle(.secondary)
+            Text(heading).font(.headline).lineLimit(1)
+            Text("Emoji").font(.caption).foregroundStyle(.secondary)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(30)), count: 8), spacing: 4) {
                 ForEach(Self.emojis, id: \.self) { emoji in
-                    cell(selected: badge == .emoji(emoji)) {
-                        Text(emoji).font(.system(size: 16))
-                    } action: { badge = .emoji(emoji) }
+                    cell(selected: badge == .emoji(emoji)) { Text(emoji).font(.system(size: 16)) } action: { badge = .emoji(emoji) }
                 }
             }
             HStack {
@@ -32,30 +26,20 @@ struct BadgePickerView: View {
                     .onSubmit { applyCustom() }
                 Button("Use") { applyCustom() }.disabled(customEmoji.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Symbol")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("Symbol").font(.caption).foregroundStyle(.secondary)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(30)), count: 8), spacing: 4) {
                 ForEach(Self.symbols, id: \.self) { name in
-                    cell(selected: badge == .symbol(name)) {
-                        Image(systemName: name).font(.system(size: 13))
-                    } action: { badge = .symbol(name) }
+                    cell(selected: badge == .symbol(name)) { Image(systemName: name).font(.system(size: 13)) } action: { badge = .symbol(name) }
                 }
             }
-            Text("Color")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("Color").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 ForEach(ColorToken.allCases, id: \.self) { token in
-                    Button {
-                        color = token
-                    } label: {
+                    Button { color = token } label: {
                         ZStack {
                             Circle().fill(token.color ?? Color.primary.opacity(0.1)).frame(width: 20, height: 20)
-                            if token == .none {
-                                Image(systemName: "slash.circle").font(.system(size: 12)).foregroundStyle(.secondary)
-                            }
-                            if color == token {
-                                Circle().strokeBorder(Color.primary, lineWidth: 2).frame(width: 24, height: 24)
-                            }
+                            if token == .none { Image(systemName: "slash.circle").font(.system(size: 12)).foregroundStyle(.secondary) }
+                            if color == token { Circle().strokeBorder(Color.primary, lineWidth: 2).frame(width: 24, height: 24) }
                         }
                     }
                     .buttonStyle(.plain)
@@ -63,19 +47,11 @@ struct BadgePickerView: View {
                     .accessibilityLabel("Color \(token.displayName)")
                 }
             }
-            if canRememberForProject {
-                Picker("Scope", selection: $scope) {
-                    Text("This window only").tag(CustomizationScope.window)
-                    Text("Remember for this project").tag(CustomizationScope.project)
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-            }
             HStack {
                 Button("Remove Badge") { badge = nil }
                 Spacer()
                 Button("Cancel", role: .cancel) { onCancel() }.keyboardShortcut(.cancelAction)
-                Button("Apply") { onApply(badge, color, scope) }
+                Button("Apply") { onApply(badge, color) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }

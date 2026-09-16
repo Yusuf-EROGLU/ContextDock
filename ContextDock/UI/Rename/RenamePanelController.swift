@@ -1,48 +1,33 @@
 import AppKit
 import SwiftUI
 
-/// Scope of a rename/badge change.
-enum CustomizationScope: Hashable {
-    case window
-    case project
-}
-
 struct RenameView: View {
-    let card: CardViewModel
-    let canRememberForProject: Bool
-    let projectWindowCount: Int
+    let heading: String
+    let hint: String
     @State var name: String
-    @State var scope: CustomizationScope = .window
-    var onSave: (String, CustomizationScope) -> Void
+    var onSave: (String) -> Void
     var onCancel: () -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Rename “\(card.rawTitle ?? card.applicationName)”")
+            Text(heading)
                 .font(.headline)
                 .lineLimit(1)
             TextField("Custom name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
-                .onSubmit { onSave(name, scope) }
-            Picker("Scope", selection: $scope) {
-                Text("This window only").tag(CustomizationScope.window)
-                Text("Remember for this project").tag(CustomizationScope.project)
-                    .disabled(!canRememberForProject)
-            }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
-            Text(scopeHint)
+                .onSubmit { onSave(name) }
+            Text(hint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Clear") { onSave("", scope) }
+                Button("Clear") { onSave("") }
                 Spacer()
                 Button("Cancel", role: .cancel) { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button("Save") { onSave(name, scope) }
+                Button("Save") { onSave(name) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }
@@ -50,23 +35,6 @@ struct RenameView: View {
         .padding(16)
         .frame(width: 340)
         .onAppear { focused = true }
-        .onChange(of: canRememberForProject) { _, allowed in
-            if !allowed { scope = .window }
-        }
-    }
-
-    private var scopeHint: String {
-        switch scope {
-        case .window:
-            return "Lives only while this window and ContextDock are open."
-        case .project:
-            if canRememberForProject {
-                let path = card.projectPath ?? ""
-                let extra = projectWindowCount > 1 ? " Applies to all \(projectWindowCount) windows matched to this project." : ""
-                return "Saved for \(URL(fileURLWithPath: path).lastPathComponent) and restored when a window is verified to belong to it.\(extra)"
-            }
-            return "Available after a project folder is attached and verified."
-        }
     }
 }
 

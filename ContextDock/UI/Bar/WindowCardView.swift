@@ -11,6 +11,7 @@ struct WindowCardView: View {
     let icon: NSImage?
     let isHovered: Bool
     let isKeyboardSelected: Bool
+    var isDropTarget: Bool = false
     let reduceMotion: Bool
 
     var body: some View {
@@ -45,7 +46,7 @@ struct WindowCardView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(borderColor, lineWidth: isKeyboardSelected ? 2 : 1)
+                .strokeBorder(borderColor, lineWidth: isKeyboardSelected || isDropTarget ? 2 : 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .opacity(card.isMinimized || card.isAppHidden ? 0.6 : 1)
@@ -101,6 +102,9 @@ struct WindowCardView: View {
     }
 
     private var background: some ShapeStyle {
+        if isDropTarget {
+            return AnyShapeStyle(Color.accentColor.opacity(0.3))
+        }
         if card.isActive {
             return AnyShapeStyle(Color.accentColor.opacity(isHovered ? 0.28 : 0.2))
         }
@@ -111,7 +115,7 @@ struct WindowCardView: View {
     }
 
     private var borderColor: Color {
-        if isKeyboardSelected { return .accentColor }
+        if isKeyboardSelected || isDropTarget { return .accentColor }
         if card.isActive { return Color.accentColor.opacity(0.6) }
         return Color.primary.opacity(0.08)
     }
@@ -120,9 +124,10 @@ struct WindowCardView: View {
         var lines: [String] = []
         lines.append("\(card.applicationName)")
         if let raw = card.rawTitle { lines.append("Title: \(raw)") }
-        if let path = card.projectPath { lines.append("Project: \(path)") }
-        if let note = card.context.conflictNote { lines.append("Note: \(note)") }
+        if let project = card.context.projectDisplayName { lines.append("Project: \(project)") }
+        if let path = card.context.projectPath { lines.append("Path: \(path)") }
         if card.isStale { lines.append("Information may be outdated") }
+        lines.append("Drag onto another card to group")
         return lines.joined(separator: "\n")
     }
 }

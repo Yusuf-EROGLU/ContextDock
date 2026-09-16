@@ -5,12 +5,12 @@ struct WindowDetailsView: View {
     let card: CardViewModel
     let window: WindowSnapshot?
     let customization: SessionCustomization?
+    let group: WindowGroup?
     var onClose: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Details")
-                .font(.headline)
+            Text("Details").font(.headline)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
                 row("Application", card.applicationName)
                 row("Bundle ID", card.bundleIdentifier ?? "—")
@@ -22,12 +22,11 @@ struct WindowDetailsView: View {
                 row("Listed by app", (window?.listedByApplication ?? true) ? "yes" : "no (probe only)")
                 row("Session ID", card.id.description)
                 row("Custom name", customization?.name ?? "—")
-                row("Project path", card.projectPath ?? "—")
+                row("Group", group.map { $0.name ?? "unnamed (\($0.members.count) windows)" } ?? "—")
                 row("Context source", "\(card.context.contextSource.rawValue) (\(card.context.confidence.rawValue))")
-                row("Worktree", card.context.worktreeRoot ?? "—")
-                row("Branch", branchLine)
-                row("Git status", gitStatus)
-                if let note = card.context.conflictNote { row("Note", note) }
+                row("Project", card.context.projectDisplayName ?? "—")
+                row("Project path", card.context.projectPath ?? "—")
+                row("Branch (title)", card.context.branchName ?? "—")
             }
             .font(.system(size: 12))
             HStack {
@@ -46,26 +45,6 @@ struct WindowDetailsView: View {
             return Date(timeIntervalSince1970: TimeInterval(ms) / 1000).formatted(date: .abbreviated, time: .standard)
         case .generation(let g):
             return "unknown (generation \(g))"
-        }
-    }
-
-    private var branchLine: String {
-        if card.context.isDetached == true { return "detached at \(card.context.shortCommit ?? "?")" }
-        if let branch = card.context.branchName {
-            return card.context.isUnborn == true ? "\(branch) (no commits yet)" : branch
-        }
-        return "—"
-    }
-
-    private var gitStatus: String {
-        guard let status = card.context.gitStatus else { return "—" }
-        let stale = card.context.gitIsStale ? " (stale)" : ""
-        switch status {
-        case .ok: return "ok" + stale
-        case .notARepository: return "not a Git repository"
-        case .gitMissing: return "Git not found"
-        case .noAccess: return "no access"
-        case .unknown(let reason): return "unknown: \(reason)" + stale
         }
     }
 

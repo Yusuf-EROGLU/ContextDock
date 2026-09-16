@@ -1,12 +1,12 @@
 import Foundation
 import Observation
 
-/// Everything ContextDock persists as JSON (simple preferences live in UserDefaults).
+/// Everything ContextDock persists as JSON (simple preferences live in UserDefaults). Window
+/// names, badges and groups are session-only by design and never stored here.
 struct PersistedState: Codable, Sendable, Equatable {
     static let currentSchemaVersion = 1
 
     var schemaVersion: Int = PersistedState.currentSchemaVersion
-    var projectRules: [ProjectRule] = []
     var hotkey: HotkeyConfig?
 }
 

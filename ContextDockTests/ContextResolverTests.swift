@@ -4,29 +4,15 @@ import Testing
 
 @Suite("ContextResolver")
 struct ContextResolverTests {
-    private let manual = ProjectBinding(projectPath: "/p/main", scope: .window, validation: .unityProject, boundAt: Date())
-    private let bridge = UnityBridgeReport(pid: 1, processStartedAtUnixMs: 0, editorSessionId: "s", projectPath: "/p/audio", projectName: "audio", unityVersion: nil, updatedAtUnixMs: 0)
-    private let args = ProcessArgumentsHint(projectPath: "/p/args", validation: .unityProject)
+    private let bridge = UnityBridgeReport(pid: 1, processStartedAtUnixMs: 0, editorSessionId: "s", projectPath: "/p/audio/", projectName: "audio", unityVersion: nil, updatedAtUnixMs: 0)
 
-    @Test("manual binding wins and flags conflicts")
-    func manualWins() {
-        let ctx = ContextResolver.resolve(ContextInputs(manual: manual, bridge: bridge, processArguments: args, rawTitle: "t"))
-        #expect(ctx.contextSource == .manual)
-        #expect(ctx.confidence == .userConfirmed)
-        #expect(ctx.projectPath == "/p/main")
-        #expect(ctx.conflictNote?.contains("audio") == true)
-    }
-
-    @Test("bridge beats process arguments, which beat structured title")
+    @Test("bridge beats structured title, which beats the plain title")
     func priorityChain() {
-        let withBridge = ContextResolver.resolve(ContextInputs(bridge: bridge, processArguments: args, structuredTitle: StructuredTitle(label: "L", project: nil, branch: nil)))
+        let withBridge = ContextResolver.resolve(ContextInputs(bridge: bridge, structuredTitle: StructuredTitle(label: "L", project: nil, branch: nil)))
         #expect(withBridge.contextSource == .unityBridge)
         #expect(withBridge.projectPath == "/p/audio")
+        #expect(withBridge.projectDisplayName == "audio")
         #expect(withBridge.confidence == .verified)
-
-        let withArgs = ContextResolver.resolve(ContextInputs(processArguments: args, structuredTitle: StructuredTitle(label: "L", project: nil, branch: nil)))
-        #expect(withArgs.contextSource == .processArguments)
-        #expect(withArgs.projectPath == "/p/args")
 
         let structured = ContextResolver.resolve(ContextInputs(structuredTitle: StructuredTitle(label: "Backend", project: "backend", branch: "dev"), rawTitle: "x"))
         #expect(structured.contextSource == .structuredTitle)
@@ -38,25 +24,9 @@ struct ContextResolverTests {
         let title = ContextResolver.resolve(ContextInputs(rawTitle: "just a title"))
         #expect(title.contextSource == .windowTitle)
         #expect(title.confidence == .unknown)
-    }
 
-    @Test("unvalidated process arguments are ignored")
-    func unvalidatedArgs() {
-        let ctx = ContextResolver.resolve(ContextInputs(processArguments: ProcessArgumentsHint(projectPath: "/nope", validation: .unreadable)))
-        #expect(ctx.contextSource == .none)
-        #expect(ctx.projectPath == nil)
-    }
-
-    @Test("git info is attached only to trusted paths")
-    func gitAttachment() {
-        let git = GitInfo(worktreeRoot: "/p/main", repositoryRoot: "/p/main", gitDirectory: nil, commonDirectory: nil, branchName: "main", shortCommit: "abc1234", isDetached: false, isUnborn: false, status: .ok, lastUpdatedAt: Date(), isStale: false)
-        let trusted = ContextResolver.resolve(ContextInputs(manual: manual, git: git))
-        #expect(trusted.branchName == "main")
-        #expect(trusted.gitStatus == .ok)
-
-        let structured = ContextResolver.resolve(ContextInputs(structuredTitle: StructuredTitle(label: "L", project: nil, branch: "x"), git: git))
-        #expect(structured.gitStatus == nil)
-        #expect(structured.branchName == "x")
+        let nothing = ContextResolver.resolve(ContextInputs())
+        #expect(nothing.contextSource == .none)
     }
 
     @Test("stale bridge marks the context stale")

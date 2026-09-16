@@ -20,20 +20,15 @@ final class AppServices {
     private let popup = PopupPanelPresenter()
     let cardActions: CardActions
 
-    // M2: project awareness, search and the global shortcut.
-    let git = GitService()
-    private(set) lazy var gitScheduler = GitRefreshScheduler(service: git, store: store)
-    private(set) lazy var projectBinding = ProjectBindingCoordinator(store: store, barState: barState)
     private(set) lazy var search = SearchPanelController(store: store, preferences: preferences)
     private let hotkeyRegistrar = CarbonHotkeyRegistrar()
     private(set) lazy var hotkeyModel = HotkeyModel(registrar: hotkeyRegistrar, persistence: persistence)
-    private var knownProcessKeys: Set<ProcessInstanceKey> = []
-    // M3: optional Unity Editor bridge heartbeats.
     private(set) lazy var unityBridge = UnityBridgeMonitor(store: store)
 
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
     private var didShowPermissionOnboarding = false
+    private var activationCounter: UInt64 = 0
 
     init() {
         store = WindowStore(customizations: customizations, persistence: persistence, apps: apps)
@@ -54,7 +49,6 @@ final class AppServices {
         wireStatusItem()
         wirePanel()
         wireStoreCallbacks()
-        wireProjectAwareness()
         observeWorkspace()
         observePreferences()
 
@@ -63,7 +57,6 @@ final class AppServices {
         snapshotTask = Task { @MainActor [weak self] in
             for await snapshot in worker.snapshots {
                 store.apply(snapshot)
-                self?.updateProcessHints(for: snapshot)
                 self?.handlePermissionChange(snapshot.permission)
             }
         }
@@ -76,8 +69,6 @@ final class AppServices {
         if preferences.barVisible {
             panelController.show()
         }
-        gitScheduler.setBarVisible(preferences.barVisible)
-        gitScheduler.start()
         unityBridge.start()
         hotkeyModel.registerSaved()
         Log.app.info("ContextDock started")
@@ -99,9 +90,7 @@ final class AppServices {
     private func wireStatusItem() {
         statusItem.isBarVisible = { [unowned self] in panelController.isShown }
         statusItem.permissionState = { [unowned self] in store.permission }
-        statusItem.onToggleBar = { [unowned self] in
-            preferences.barVisible.toggle()
-        }
+        statusItem.onToggleBar = { [unowned self] in preferences.barVisible.toggle() }
         statusItem.onRefresh = { [unowned self] in refresh() }
         statusItem.onSearch = { [unowned self] in search.toggle() }
         statusItem.onSettings = { [unowned self] in settingsWindow.show() }
@@ -110,56 +99,43 @@ final class AppServices {
     }
 
     private func wirePanel() {
-        panelController.onActivate = { [unowned self] id in activate(id) }
-        panelController.onMenu = { [unowned self] id in
-            cardActions.menu(for: id, anchor: panelController.anchorRect(for: id))
+        panelController.onActivate = { [unowned self] item in activate(item) }
+        panelController.onActivateMember = { [unowned self] id in activate(.window(id)) }
+        panelController.onMenu = { [unowned self] target in
+            let anchorItem: BarItemID
+            switch target {
+            case .item(let id): anchorItem = id
+            case .member(_, let group): anchorItem = .group(group)
+            }
+            return cardActions.menu(for: target, anchor: panelController.anchorRect(for: anchorItem))
         }
         panelController.onRequestPermission = { [unowned self] in
             AXPermission.requestTrust()
             permissionWindow.show()
         }
         permissionWindow.onRecheck = { [unowned self] in refresh() }
-    }
-
-    private func wireProjectAwareness() {
-        cardActions.onAttachProject = { [unowned self] id in projectBinding.attach(to: id) }
-        projectBinding.onBound = { [unowned self] in gitScheduler.pathsMayHaveChanged() }
-        search.onChoose = { [unowned self] id in activate(id) }
+        cardActions.onActivateWindow = { [unowned self] id in activate(.window(id)) }
+        cardActions.onActivateGroup = { [unowned self] id in activate(.group(id)) }
+        search.onChoose = { [unowned self] item in activate(item) }
         hotkeyRegistrar.onPressed = { [unowned self] in search.toggle() }
     }
 
-    /// Reads Unity `-projectPath` arguments for newly seen Unity processes (optional adapter).
-    private func updateProcessHints(for snapshot: DiscoverySnapshot) {
-        let keys = Set(snapshot.processes.keys)
-        let added = keys.subtracting(knownProcessKeys)
-        knownProcessKeys = keys
-        guard preferences.readProcessArguments else { return }
-        for key in added {
-            guard let process = snapshot.processes[key], process.kind.isUnityEditor else { continue }
-            let hint = UnityProcessArgumentsAdapter.hint(pid: key.pid)
-            if let hint {
-                store.setProcessArgumentsHint(hint, for: key)
-                if Log.verbose {
-                    let pid = key.pid
-                    Log.integrations.debug("Unity pid=\(pid) -projectPath found (validation: \(String(describing: hint.validation), privacy: .public))")
-                }
-            }
-        }
-    }
-
     private func wireStoreCallbacks() {
-        store.onCardsChanged = { [unowned self] in
+        store.onItemsChanged = { [unowned self] in
             panelController.relayout()
-            gitScheduler.pathsMayHaveChanged()
         }
         store.onWindowsRemoved = { [unowned self] removed in
-            if let selected = barState.keyboardSelectedCard, removed.contains(selected) {
-                barState.keyboardSelectedCard = nil
+            let removedItems = Set(removed.map { BarItemID.window($0) })
+            if let selected = barState.keyboardSelectedItem, removedItems.contains(selected) {
+                barState.keyboardSelectedItem = nil
             }
-            if let hovered = barState.hoveredCard, removed.contains(hovered) {
-                barState.hoveredCard = nil
+            if let hovered = barState.hoveredItem, removedItems.contains(hovered) {
+                barState.hoveredItem = nil
             }
-            if let editing = cardActions.editingCard, removed.contains(editing) {
+            if let drag = barState.drag, removedItems.contains(drag.item) {
+                barState.drag = nil
+            }
+            if let editing = cardActions.editingItem, removedItems.contains(editing) {
                 popup.dismiss()
                 barState.showToast("Window closed")
             }
@@ -182,9 +158,8 @@ final class AppServices {
         ] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main, using: reconcile))
         }
-        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
             Task { @AXActor in worker.setMode(.paused) }
-            Task { @MainActor in self?.gitScheduler.setPaused(true) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyWorkerMode() }
@@ -231,8 +206,6 @@ final class AppServices {
         let mode: AXWorker.Mode = preferences.barVisible ? .active : .hidden
         let worker = self.worker
         Task { @AXActor in worker.setMode(mode) }
-        gitScheduler.setBarVisible(preferences.barVisible)
-        gitScheduler.setPaused(false)
     }
 
     private func handlePermissionChange(_ permission: PermissionState) {
@@ -259,26 +232,49 @@ final class AppServices {
         Task { @AXActor in worker.requestReconcile(after: .zero) }
     }
 
-    func activate(_ id: WindowSessionID) {
+    /// Activates a single window or a whole group. For a group every member is raised in
+    /// order and the focus target (last focused member, else the first) receives focus last.
+    func activate(_ item: BarItemID) {
         popup.dismiss()
         if search.isShown { search.cancel() }
+        activationCounter += 1
+        let request = activationCounter
         let focus = self.focus
-        Task { @MainActor [weak self] in
-            let outcome = await focus.focus(id)
-            guard let self else { return }
-            switch outcome {
-            case .verified:
-                break
-            case .unverified(let note):
-                if Log.verbose { Log.focus.debug("Focus unverified: \(note, privacy: .public)") }
-            case .failed(let failure):
-                barState.showToast(failure.message)
-                if failure == .windowGone || failure == .processGone {
-                    refresh()
-                }
-            case .aborted(let reason):
-                if Log.verbose { Log.focus.debug("Focus aborted: \(reason, privacy: .public)") }
+
+        switch item {
+        case .window(let id):
+            store.noteFocused(id)
+            Task { @MainActor [weak self] in
+                let outcome = await focus.focus(id)
+                self?.report(outcome, request: request)
             }
+        case .group(let groupID):
+            guard let group = store.group(groupID), let target = group.focusTarget else { return }
+            let others = group.members.filter { $0 != target }
+            Task { @MainActor [weak self] in
+                for member in others {
+                    guard self?.activationCounter == request else { return }
+                    _ = await focus.raise(member)
+                }
+                guard self?.activationCounter == request else { return }
+                let outcome = await focus.focus(target)
+                self?.report(outcome, request: request)
+            }
+        }
+    }
+
+    private func report(_ outcome: FocusOutcome, request: UInt64) {
+        guard activationCounter == request else { return }
+        switch outcome {
+        case .verified:
+            break
+        case .unverified(let note):
+            if Log.verbose { Log.focus.debug("Focus unverified: \(note, privacy: .public)") }
+        case .failed(let failure):
+            barState.showToast(failure.message)
+            if failure == .windowGone || failure == .processGone { refresh() }
+        case .aborted(let reason):
+            if Log.verbose { Log.focus.debug("Focus aborted: \(reason, privacy: .public)") }
         }
     }
 
@@ -288,23 +284,19 @@ final class AppServices {
             store: store,
             persistence: persistence,
             onResetAll: { [unowned self] in confirmResetAll() },
-            onDeleteRule: { [unowned self] id in store.deleteRule(id: id) },
             hotkeySection: AnyView(HotkeySettingsView(model: hotkeyModel))
         ))
     }
 
     private func confirmResetAll() {
         let alert = NSAlert()
-        alert.messageText = "Reset all customizations?"
-        alert.informativeText = "Removes every session name, badge and attached folder. Optionally also deletes saved project rules."
-        alert.addButton(withTitle: "Reset Session Only")
-        alert.addButton(withTitle: "Reset Everything")
+        alert.messageText = "Reset all names, badges and groups?"
+        alert.informativeText = "Every session name, badge, color and group is removed. Windows themselves are not affected."
+        alert.addButton(withTitle: "Reset")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: store.resetAllCustomizations(includingRules: false)
-        case .alertSecondButtonReturn: store.resetAllCustomizations(includingRules: true)
-        default: break
+        if alert.runModal() == .alertFirstButtonReturn {
+            store.resetAllCustomizations()
         }
     }
 }

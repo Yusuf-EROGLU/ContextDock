@@ -1,37 +1,65 @@
 import AppKit
 import SwiftUI
 
-/// AppKit overlay that owns the card's mouse handling: first-click without activation,
-/// hover with an always-active tracking area, and right-click context menus.
+/// Identifies what an interaction overlay stands for: a bar item, or one member icon inside a
+/// group card.
+enum InteractionTarget: Hashable {
+    case item(BarItemID)
+    case member(WindowSessionID, in: GroupID)
+
+    var draggedItem: BarItemID {
+        switch self {
+        case .item(let id): return id
+        case .member(let window, _): return .window(window)
+        }
+    }
+}
+
+/// Callbacks for drag gestures, routed to the drag coordinator by the bar.
+struct DragHandlers {
+    var began: (InteractionTarget, NSPoint) -> Void
+    var moved: (NSPoint) -> Void
+    var ended: (NSPoint, Bool) -> Void
+}
+
+/// AppKit overlay that owns a card's (or member icon's) mouse handling: first-click without
+/// activation, hover with an always-active tracking area, right-click menus, and drag start.
 struct CardInteractionView: NSViewRepresentable {
+    var target: InteractionTarget
     var onClick: () -> Void
     var onHover: (Bool) -> Void
     var makeMenu: () -> NSMenu
+    var drag: DragHandlers?
 
     func makeNSView(context: Context) -> InteractionNSView {
         let view = InteractionNSView()
-        view.onClick = onClick
-        view.onHover = onHover
-        view.makeMenu = makeMenu
+        apply(to: view)
         return view
     }
 
     func updateNSView(_ nsView: InteractionNSView, context: Context) {
-        nsView.onClick = onClick
-        nsView.onHover = onHover
-        nsView.makeMenu = makeMenu
+        apply(to: nsView)
+    }
+
+    private func apply(to view: InteractionNSView) {
+        view.target = target
+        view.onClick = onClick
+        view.onHover = onHover
+        view.makeMenu = makeMenu
+        view.drag = drag
     }
 
     final class InteractionNSView: NSView {
+        var target: InteractionTarget?
         var onClick: (() -> Void)?
         var onHover: ((Bool) -> Void)?
         var makeMenu: (() -> NSMenu)?
+        var drag: DragHandlers?
         private var trackingArea: NSTrackingArea?
         private var pressed = false
         private var pressLocation: NSPoint?
-        private var lastDragLocation: NSPoint?
-        private var didPan = false
-        private static let dragThreshold: CGFloat = 4
+        private var dragging = false
+        private static let dragThreshold: CGFloat = 5
 
         override var acceptsFirstResponder: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -39,12 +67,7 @@ struct CardInteractionView: NSViewRepresentable {
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             if let trackingArea { removeTrackingArea(trackingArea) }
-            let area = NSTrackingArea(
-                rect: bounds,
-                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                owner: self,
-                userInfo: nil
-            )
+            let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
             addTrackingArea(area)
             trackingArea = area
         }
@@ -58,30 +81,31 @@ struct CardInteractionView: NSViewRepresentable {
                 return
             }
             pressed = true
-            didPan = false
+            dragging = false
             pressLocation = event.locationInWindow
-            lastDragLocation = event.locationInWindow
         }
 
-        /// Dragging on a card pans the strip instead of clicking (grab-and-drag scrolling).
         override func mouseDragged(with event: NSEvent) {
-            guard pressed, let start = pressLocation, let last = lastDragLocation else { return }
+            guard pressed, let start = pressLocation else { return }
             let current = event.locationInWindow
-            if !didPan, abs(current.x - start.x) < Self.dragThreshold, abs(current.y - start.y) < Self.dragThreshold {
-                return
+            if !dragging {
+                guard abs(current.x - start.x) >= Self.dragThreshold || abs(current.y - start.y) >= Self.dragThreshold else { return }
+                guard let target, let drag else { return }
+                dragging = true
+                drag.began(target, current)
             }
-            didPan = true
-            if let scrollView = enclosingScrollView {
-                StripPanning.pan(scrollView, by: current.x - last.x)
-            }
-            lastDragLocation = current
+            drag?.moved(current)
         }
 
         override func mouseUp(with event: NSEvent) {
             guard pressed else { return }
             pressed = false
-            defer { pressLocation = nil; lastDragLocation = nil }
-            guard !didPan else { return }
+            defer { pressLocation = nil }
+            if dragging {
+                dragging = false
+                drag?.ended(event.locationInWindow, true)
+                return
+            }
             let location = convert(event.locationInWindow, from: nil)
             if bounds.contains(location) {
                 onClick?()

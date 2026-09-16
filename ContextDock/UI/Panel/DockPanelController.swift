@@ -10,25 +10,31 @@ final class DockPanelController {
     private let preferences: Preferences
     private var isVisible = false
 
-    var onActivate: ((WindowSessionID) -> Void)?
-    var onMenu: ((WindowSessionID) -> NSMenu)?
+    var onActivate: ((BarItemID) -> Void)?
+    var onActivateMember: ((WindowSessionID) -> Void)?
+    var onMenu: ((InteractionTarget) -> NSMenu)?
     var onRequestPermission: (() -> Void)?
+    let dragCoordinator: DragCoordinator
 
     init(store: WindowStore, barState: BarState, preferences: Preferences) {
         self.store = store
         self.barState = barState
         self.preferences = preferences
+        self.dragCoordinator = DragCoordinator(store: store, barState: barState)
 
         let root = DockBarView(
             store: store,
             barState: barState,
             onActivate: { [weak self] id in self?.onActivate?(id) },
-            onMenu: { [weak self] id in self?.onMenu?(id) ?? NSMenu() },
-            onRequestPermission: { [weak self] in self?.onRequestPermission?() }
+            onActivateMember: { [weak self] id in self?.onActivateMember?(id) },
+            onMenu: { [weak self] target in self?.onMenu?(target) ?? NSMenu() },
+            onRequestPermission: { [weak self] in self?.onRequestPermission?() },
+            dragHandlers: dragCoordinator.handlers
         )
         let hosting = FirstMouseHostingView(rootView: root)
         hosting.sizingOptions = []
         panel.contentView = hosting
+        dragCoordinator.attach(contentView: hosting)
         relayout()
     }
 
@@ -54,9 +60,9 @@ final class DockPanelController {
     /// Recomputes the frame from the current card count, screen and preferences.
     func relayout() {
         guard let screen = ScreenPlacement.resolve(preferences.screenSelection) else { return }
-        let count = store.permission.isGranted ? store.cards.count : 0
+        let count = store.permission.isGranted ? store.items.count : 0
         let frame = ScreenPlacement.barFrame(
-            preferredWidth: DockBarView.preferredWidth(cardCount: count),
+            preferredWidth: DockBarView.preferredWidth(itemCount: count),
             height: DockBarView.preferredHeight,
             bottomMargin: CGFloat(preferences.bottomMargin),
             on: screen
@@ -66,9 +72,9 @@ final class DockPanelController {
         }
     }
 
-    /// Screen coordinates of a card, used to anchor popovers/panels.
-    func anchorRect(for id: WindowSessionID) -> NSRect {
-        guard let index = store.cards.firstIndex(where: { $0.id == id }) else { return panel.frame }
+    /// Screen coordinates of an item, used to anchor popovers/panels.
+    func anchorRect(for id: BarItemID) -> NSRect {
+        guard let index = store.items.firstIndex(where: { $0.id == id }) else { return panel.frame }
         let x = panel.frame.minX + DockBarView.padding + CGFloat(index) * (WindowCardView.width + DockBarView.spacing)
         return NSRect(x: x, y: panel.frame.minY, width: WindowCardView.width, height: panel.frame.height)
     }

@@ -33,53 +33,55 @@ enum ColorToken: String, Sendable, Codable, CaseIterable, Hashable {
     }
 }
 
-/// How a manually attached project folder validated.
-enum ProjectFolderValidation: Sendable, Hashable, Codable {
-    case unityProject
-    case folder(warning: String?)
-    case unreadable
-}
-
-/// A project folder the user attached to a window in this session.
-struct ProjectBinding: Sendable, Hashable, Codable {
-    enum Scope: String, Sendable, Codable {
-        case window
-        case processInstance
-    }
-
-    var projectPath: String
-    var scope: Scope
-    var validation: ProjectFolderValidation
-    var boundAt: Date
-
-    var normalizedPath: String { PathNormalizer.normalize(projectPath) }
-}
-
 /// Session-only customization of a single window (dies with the window or with ContextDock).
 struct SessionCustomization: Sendable, Hashable, Codable {
     var name: String?
     var badge: Badge?
     var colorToken: ColorToken?
-    var projectBinding: ProjectBinding?
 
     var isEmpty: Bool {
-        name == nil && badge == nil && colorToken == nil && projectBinding == nil
+        name == nil && badge == nil && colorToken == nil
     }
 }
 
-/// Persistent per-project rule. It is applied only after a window is verified to belong to
-/// the project; its existence never proves that a window belongs to that project.
-struct ProjectRule: Sendable, Hashable, Codable, Identifiable {
-    var id: UUID
-    var applicationKind: ApplicationKind
-    var projectPath: String
-    var customLabel: String?
+/// Session-only identifier of a card group.
+struct GroupID: Hashable, Sendable, Codable, CustomStringConvertible {
+    let rawValue: UUID
+    init() { rawValue = UUID() }
+    init(rawValue: UUID) { self.rawValue = rawValue }
+    var description: String { rawValue.uuidString }
+}
+
+/// A user-made stack of windows that belong together (for example the Unity, Rider and Ghostty
+/// windows of one task). Groups live only for the current ContextDock run.
+struct WindowGroup: Sendable, Hashable, Codable, Identifiable {
+    var id: GroupID
+    var name: String?
     var badge: Badge?
     var colorToken: ColorToken?
-    var createdAt: Date
-    var updatedAt: Date
+    /// Ordered members; the order is the order in which windows are raised.
+    var members: [WindowSessionID]
+    /// Member that received keyboard focus most recently; gets focus when the group opens.
+    var lastFocusedMember: WindowSessionID?
 
-    var contextKey: ContextKey {
-        ContextKey(applicationKind: applicationKind, projectPath: projectPath)
+    init(id: GroupID = GroupID(), name: String? = nil, badge: Badge? = nil, colorToken: ColorToken? = nil, members: [WindowSessionID], lastFocusedMember: WindowSessionID? = nil) {
+        self.id = id
+        self.name = name
+        self.badge = badge
+        self.colorToken = colorToken
+        self.members = members
+        self.lastFocusedMember = lastFocusedMember
     }
+
+    /// Window to focus when the group is opened: last focused member if still present, else the first.
+    var focusTarget: WindowSessionID? {
+        if let last = lastFocusedMember, members.contains(last) { return last }
+        return members.first
+    }
+}
+
+/// An item shown in the bar: a single window card or a group card.
+enum BarItemID: Hashable, Sendable, Codable {
+    case window(WindowSessionID)
+    case group(GroupID)
 }

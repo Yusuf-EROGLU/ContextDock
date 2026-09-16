@@ -92,6 +92,18 @@ final class FocusService {
         }
     }
 
+    /// Brings a window forward without the verification loop. Used for the non-focused members
+    /// when a group opens; the group's focus target then goes through `focus(_:)`.
+    func raise(_ id: WindowSessionID) async -> Bool {
+        guard case .alive(let pid) = port.probe(id) else { return false }
+        if port.applicationIsHidden(pid) == true { port.setApplicationHidden(pid, false) }
+        if port.windowIsMinimized(id) == true { port.setWindowMinimized(id, false) }
+        _ = await port.activateApplication(pid)
+        let raised = port.raiseWindow(id)
+        port.setWindowMain(id)
+        return raised
+    }
+
     private func attemptOnce(id: WindowSessionID, pid: pid_t) async -> FocusOutcome {
         if port.applicationIsHidden(pid) == true {
             port.setApplicationHidden(pid, false)
