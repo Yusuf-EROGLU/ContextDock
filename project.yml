@@ -1,0 +1,72 @@
+name: ContextDock
+options:
+  bundleIdPrefix: com.yusuferoglu
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  xcodeVersion: "26.3"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_APP_SANDBOX: "NO"
+    ENABLE_HARDENED_RUNTIME: "NO"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+    DEAD_CODE_STRIPPING: "YES"
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    SWIFT_EMIT_LOC_STRINGS: "NO"
+targets:
+  ContextDock:
+    type: application
+    platform: macOS
+    sources:
+      - path: ContextDock
+    info:
+      path: ContextDock/Resources/Info.plist
+      properties:
+        CFBundleName: ContextDock
+        CFBundleDisplayName: ContextDock
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "14.0"
+        LSUIElement: true
+        NSAccessibilityUsageDescription: "ContextDock needs Accessibility access to read other apps' window titles and to switch to the window you pick."
+        NSHumanReadableCopyright: ""
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yusuferoglu.ContextDock
+        PRODUCT_NAME: ContextDock
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+  ContextDockTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ContextDockTests
+    dependencies:
+      - target: ContextDock
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yusuferoglu.ContextDockTests
+        GENERATE_INFOPLIST_FILE: "YES"
+schemes:
+  ContextDock:
+    shared: true
+    build:
+      targets:
+        ContextDock: all
+        ContextDockTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ContextDockTests
+      gatherCoverageData: false
