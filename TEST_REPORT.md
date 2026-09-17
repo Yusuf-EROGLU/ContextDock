@@ -16,6 +16,7 @@ person at the Mac, usually because the Accessibility grant is a user action).
 | Ghostty | 1.3.1 (`com.mitchellh.ghostty`) |
 | Unity | Editors 2021.3–6000.3 via Unity Hub (`com.unity3d.UnityEditor5.x`) |
 | Signing | ad-hoc until 2026-09-16 15:30, then self-signed identity `ContextDock Dev` (stable TCC grant); sandbox off |
+| Second machine (2026-09-17) | macOS 26.6.2, Xcode 27.0 (27A266a), no xcodegen (committed project used), three displays; identity recreated; 69 tests pass; A01–A08/G01–G04 behaviour confirmed by the user |
 
 ## Commands
 
@@ -84,6 +85,7 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | G02 | Click group → all members forward, last-used member focused; click member icon → only that window | **PASS** | User test 2026-09-16. |
 | G03 | Remove from group / ungroup / group dissolves when a member closes | **PASS** | User test 2026-09-16; automated: BarArrangement tests. |
 | G04 | Group in search (⌃⌥Space) opens all members | **PASS** | User test 2026-09-16. |
+| P01 | Bar position bottom/top/left/right and card size | **PASS** (placement) | 2026-09-17: relaunched once per edge on a 1920×1080 secondary display; frames were bottom (y at screen bottom), top (30 pt below the top, AppKit keeps it under the menu bar), left (x at screen left, 206 pt wide, vertical), right (x+width at screen right). Card width/height sliders relayout live; visual check by the user pending. |
 | M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **PASS** | Reported by the user on 2026-09-16 after granting Accessibility to the `ContextDock Dev`-signed build. |
 
 ### How to test grouping (G01–G04)

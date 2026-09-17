@@ -1,16 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// The horizontal bar. Shows real windows and user-made groups; permission and empty states
-/// are explicit. Cards can be dragged onto each other to form groups, or between cards to
-/// reorder them.
+/// The bar. Shows real windows and user-made groups; permission and empty states are explicit.
+/// Cards can be dragged onto each other to form groups, or between cards to reorder them.
+/// Lays out horizontally on the top/bottom edge and vertically on the left/right edge.
 struct DockBarView: View {
     static let padding: CGFloat = 8
     static let spacing: CGFloat = 8
-    static let minimumWidth: CGFloat = 360
+    static let minimumStatusLength: CGFloat = 360
 
     @Bindable var store: WindowStore
     @Bindable var barState: BarState
+    @Bindable var preferences: Preferences
     var onActivate: (BarItemID) -> Void
     var onActivateMember: (WindowSessionID) -> Void
     var onMenu: (InteractionTarget) -> NSMenu
@@ -18,6 +19,9 @@ struct DockBarView: View {
     var dragHandlers: DragHandlers
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var metrics: CardMetrics { preferences.cardMetrics }
+    private var axis: Axis { preferences.barEdge.isVertical ? .vertical : .horizontal }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -61,16 +65,23 @@ struct DockBarView: View {
     }
 
     private var strip: some View {
-        HorizontalStrip(height: WindowCardView.height) {
-            HStack(spacing: Self.spacing) {
-                ForEach(store.items) { item in
-                    insertionMarker(before: item.id)
-                    itemView(item)
-                        .opacity(barState.drag?.item == item.id ? 0.35 : 1)
-                }
-                insertionMarker(before: nil)
+        CardStrip(axis: axis, thickness: axis == .horizontal ? metrics.height : metrics.width) {
+            if axis == .horizontal {
+                HStack(spacing: Self.spacing) { stripItems }
+            } else {
+                VStack(spacing: Self.spacing) { stripItems }
             }
         }
+    }
+
+    @ViewBuilder
+    private var stripItems: some View {
+        ForEach(store.items) { item in
+            insertionMarker(before: item.id)
+            itemView(item)
+                .opacity(barState.drag?.item == item.id ? 0.35 : 1)
+        }
+        insertionMarker(before: nil)
     }
 
     @ViewBuilder
@@ -79,6 +90,7 @@ struct DockBarView: View {
         case .window(let card):
             WindowCardView(
                 card: card,
+                metrics: metrics,
                 icon: store.icon(for: card),
                 isHovered: barState.hoveredItem == item.id,
                 isKeyboardSelected: barState.keyboardSelectedItem == item.id,
@@ -89,6 +101,7 @@ struct DockBarView: View {
         case .group(let group):
             GroupCardView(
                 group: group,
+                metrics: metrics,
                 icon: { store.icon(for: $0) },
                 isHovered: barState.hoveredItem == item.id,
                 isKeyboardSelected: barState.keyboardSelectedItem == item.id,
@@ -98,7 +111,7 @@ struct DockBarView: View {
                     AnyView(interaction(.member(member.id, in: group.id), click: { onActivateMember(member.id) }))
                 }
             )
-            .overlay(interaction(.item(item.id), click: { onActivate(item.id) }).allowsHitTesting(true))
+            .overlay(interaction(.item(item.id), click: { onActivate(item.id) }))
         }
     }
 
@@ -122,12 +135,21 @@ struct DockBarView: View {
     @ViewBuilder
     private func insertionMarker(before id: BarItemID?) -> some View {
         let active = barState.drag?.target == .insert(before: id)
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(Color.accentColor)
-            .frame(width: 3, height: WindowCardView.height - 12)
-            .opacity(active ? 1 : 0)
-            .frame(width: active ? 3 : 0)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: active)
+        if axis == .horizontal {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.accentColor)
+                .frame(width: 3, height: metrics.height - 12)
+                .opacity(active ? 1 : 0)
+                .frame(width: active ? 3 : 0)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: active)
+        } else {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.accentColor)
+                .frame(width: metrics.width - 12, height: 3)
+                .opacity(active ? 1 : 0)
+                .frame(height: active ? 3 : 0)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: active)
+        }
     }
 
     @ViewBuilder
@@ -171,7 +193,7 @@ struct DockBarView: View {
     }
 
     private var permissionState: some View {
-        HStack(spacing: 12) {
+        statusContainer {
             Image(systemName: "hand.raised.fill").font(.system(size: 22)).foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(store.permission == .revoked ? "Accessibility permission was revoked" : "Accessibility permission required")
@@ -179,30 +201,44 @@ struct DockBarView: View {
                 Text("ContextDock needs it to list windows and switch to them.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            if axis == .horizontal { Spacer(minLength: 8) }
             Button("Grant Access…") { onRequestPermission() }
                 .buttonStyle(.borderedProminent).controlSize(.small)
         }
-        .padding(.horizontal, 8)
-        .frame(minWidth: Self.minimumWidth, minHeight: WindowCardView.height)
     }
 
     private func statusRow(symbol: String, text: String) -> some View {
-        HStack(spacing: 10) {
+        statusContainer {
             Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(.secondary)
             Text(text).font(.system(size: 13)).foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+            if axis == .horizontal { Spacer(minLength: 0) }
         }
-        .padding(.horizontal, 8)
-        .frame(minWidth: Self.minimumWidth, minHeight: WindowCardView.height)
     }
 
-    /// Width the bar wants for a given number of items (before capping to the screen).
-    static func preferredWidth(itemCount: Int) -> CGFloat {
-        guard itemCount > 0 else { return minimumWidth + 2 * padding }
-        let cards = CGFloat(itemCount) * WindowCardView.width + CGFloat(itemCount - 1) * spacing
-        return cards + 2 * padding
+    @ViewBuilder
+    private func statusContainer<Inner: View>(@ViewBuilder _ inner: () -> Inner) -> some View {
+        if axis == .horizontal {
+            HStack(spacing: 12) { inner() }
+                .padding(.horizontal, 8)
+                .frame(minWidth: Self.minimumStatusLength, minHeight: metrics.height)
+        } else {
+            VStack(spacing: 10) { inner() }
+                .multilineTextAlignment(.center)
+                .padding(8)
+                .frame(width: metrics.width)
+                .frame(minHeight: Self.minimumStatusLength * 0.5)
+        }
     }
 
-    static var preferredHeight: CGFloat { WindowCardView.height + 2 * padding }
+    /// Length along the bar's edge that the content wants for a given number of items.
+    static func preferredLength(itemCount: Int, metrics: CardMetrics, vertical: Bool) -> CGFloat {
+        guard itemCount > 0 else { return (vertical ? minimumStatusLength * 0.5 : minimumStatusLength) + 2 * padding }
+        let card = vertical ? metrics.height : metrics.width
+        return CGFloat(itemCount) * card + CGFloat(itemCount - 1) * spacing + 2 * padding
+    }
+
+    /// Size across the bar's edge.
+    static func thickness(metrics: CardMetrics, vertical: Bool) -> CGFloat {
+        (vertical ? metrics.width : metrics.height) + 2 * padding
+    }
 }

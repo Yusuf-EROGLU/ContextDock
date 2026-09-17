@@ -4,10 +4,8 @@ import SwiftUI
 /// One window card: app icon (primary identity) with an optional small badge, a two-line
 /// label, and distinct hover / active / keyboard-selected visual states.
 struct WindowCardView: View {
-    static let width: CGFloat = 190
-    static let height: CGFloat = 56
-
     let card: CardViewModel
+    let metrics: CardMetrics
     let icon: NSImage?
     let isHovered: Bool
     let isKeyboardSelected: Bool
@@ -19,10 +17,10 @@ struct WindowCardView: View {
             iconView
             VStack(alignment: .leading, spacing: 2) {
                 Text(card.title)
-                    .font(.system(size: 13, weight: card.hasCustomName ? .semibold : .medium))
+                    .font(.system(size: metrics.titleFontSize, weight: card.hasCustomName ? .semibold : .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if let subtitle = card.subtitle {
+                if metrics.showsSubtitle, let subtitle = card.subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -33,7 +31,7 @@ struct WindowCardView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .frame(width: Self.width, height: Self.height)
+        .frame(width: metrics.width, height: metrics.height)
         .background(background)
         .overlay(alignment: .leading) {
             if let color = card.colorToken.color {
@@ -63,11 +61,11 @@ struct WindowCardView: View {
                 Image(nsImage: icon)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 32, height: 32)
+                    .frame(width: metrics.iconSize - 4, height: metrics.iconSize - 4)
             } else {
                 Image(systemName: "macwindow")
-                    .font(.system(size: 22))
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: metrics.iconSize * 0.65))
+                    .frame(width: metrics.iconSize - 4, height: metrics.iconSize - 4)
                     .foregroundStyle(.secondary)
             }
             if let badge = card.badge {
@@ -81,7 +79,7 @@ struct WindowCardView: View {
                     .offset(x: 5, y: 5)
             }
         }
-        .frame(width: 36, height: 36)
+        .frame(width: metrics.iconSize, height: metrics.iconSize)
     }
 
     @ViewBuilder

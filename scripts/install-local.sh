@@ -23,6 +23,10 @@ if [ -d "$DEST" ]; then
   rm -rf "$DEST"
 fi
 ditto "$SRC" "$DEST"
+# A project copied over AirDrop/Downloads carries com.apple.quarantine on its files; the build
+# inherits it and Gatekeeper would run the app translocated (and it may never show its bar).
+# This is our own build product, so clearing the flag is legitimate.
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 echo
 echo "Installed: $DEST"

@@ -5,6 +5,7 @@ import SwiftUI
 /// switches to that member only; clicking elsewhere opens the whole group.
 struct GroupCardView: View {
     let group: GroupViewModel
+    let metrics: CardMetrics
     let icon: (WindowSessionID) -> NSImage?
     let isHovered: Bool
     let isKeyboardSelected: Bool
@@ -23,21 +24,23 @@ struct GroupCardView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(group.colorToken.color ?? .secondary)
                     Text(group.title)
-                        .font(.system(size: 13, weight: group.hasCustomName ? .semibold : .medium))
+                        .font(.system(size: metrics.titleFontSize, weight: group.hasCustomName ? .semibold : .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if let badge = group.badge { badgeView(badge) }
                 }
-                Text(group.subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if metrics.showsSubtitle {
+                    Text(group.subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .frame(width: WindowCardView.width, height: WindowCardView.height)
+        .frame(width: metrics.width, height: metrics.height)
         .background(background)
         .overlay(alignment: .leading) {
             if let color = group.colorToken.color {
@@ -56,22 +59,24 @@ struct GroupCardView: View {
     }
 
     private var memberIcons: some View {
-        let visible = Array(group.members.prefix(Self.maxVisibleMembers))
+        let maxVisible = max(2, min(Self.maxVisibleMembers, Int((metrics.width - 90) / 20)))
+        let visible = Array(group.members.prefix(maxVisible))
         let hidden = group.members.count - visible.count
+        let size = min(26, metrics.iconSize - 6)
         return HStack(spacing: -6) {
             ForEach(visible) { member in
                 ZStack {
-                    Circle().fill(.background).frame(width: 26, height: 26)
+                    Circle().fill(.background).frame(width: size, height: size)
                     if let image = icon(member.id) {
-                        Image(nsImage: image).resizable().interpolation(.high).frame(width: 22, height: 22)
+                        Image(nsImage: image).resizable().interpolation(.high).frame(width: size - 4, height: size - 4)
                     } else {
-                        Image(systemName: "macwindow").font(.system(size: 14)).foregroundStyle(.secondary)
+                        Image(systemName: "macwindow").font(.system(size: size * 0.55)).foregroundStyle(.secondary)
                     }
                     if member.isActive {
-                        Circle().strokeBorder(Color.accentColor, lineWidth: 1.5).frame(width: 26, height: 26)
+                        Circle().strokeBorder(Color.accentColor, lineWidth: 1.5).frame(width: size, height: size)
                     }
                 }
-                .frame(width: 26, height: 26)
+                .frame(width: size, height: size)
                 .overlay(memberOverlay(member))
                 .help("\(member.applicationName): \(member.title)")
                 .accessibilityLabel("\(member.applicationName), \(member.title)")
@@ -80,11 +85,11 @@ struct GroupCardView: View {
             if hidden > 0 {
                 Text("+\(hidden)")
                     .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 26, height: 26)
+                    .frame(width: size, height: size)
                     .background(Circle().fill(Color.primary.opacity(0.1)))
             }
         }
-        .frame(height: 36)
+        .frame(height: metrics.iconSize)
     }
 
     @ViewBuilder

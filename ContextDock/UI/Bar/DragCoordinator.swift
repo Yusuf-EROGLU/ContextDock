@@ -6,6 +6,8 @@ import AppKit
 final class DragCoordinator {
     private let store: WindowStore
     private let barState: BarState
+    /// Supplies the current layout axis (top/bottom bars are horizontal, left/right vertical).
+    var isVertical: () -> Bool = { false }
     private weak var contentView: NSView?
     private var origin: BarItemID?
     private var fromGroup: GroupID?
@@ -71,8 +73,9 @@ final class DragCoordinator {
         return CGPoint(x: local.x, y: contentView.bounds.height - local.y)
     }
 
-    /// Finds the interaction overlay under the pointer. Left/right thirds of a card mean
-    /// "insert before/after"; the middle third means "stack onto".
+    /// Finds the interaction overlay under the pointer. The leading/trailing thirds of a card
+    /// (left/right, or top/bottom on a vertical bar) mean "insert before/after"; the middle
+    /// third means "stack onto".
     private func dropTarget(at windowPoint: NSPoint) -> BarState.DropTarget? {
         guard let contentView, let origin else { return nil }
         let local = contentView.convert(windowPoint, from: nil)
@@ -95,11 +98,18 @@ final class DragCoordinator {
         if case .group(let group) = hovered, fromGroup == group { return nil }
 
         let point = overlay.convert(windowPoint, from: nil)
-        let width = overlay.bounds.width
-        if point.x < width * 0.3 {
+        // Fraction along the layout direction, 0 = leading (left, or top on a vertical bar).
+        let fraction: CGFloat
+        if isVertical() {
+            // AppKit y grows upwards; the first card is at the top.
+            fraction = overlay.isFlipped ? point.y / overlay.bounds.height : 1 - point.y / overlay.bounds.height
+        } else {
+            fraction = point.x / overlay.bounds.width
+        }
+        if fraction < 0.3 {
             return .insert(before: hovered)
         }
-        if point.x > width * 0.7 {
+        if fraction > 0.7 {
             return .insert(before: itemAfter(hovered))
         }
         return .stack(hovered)

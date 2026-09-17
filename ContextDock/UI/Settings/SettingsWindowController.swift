@@ -12,8 +12,14 @@ struct SettingsView: View {
         Form {
             Section("Bar") {
                 Toggle("Show bar", isOn: $preferences.barVisible)
+                Picker("Position", selection: $preferences.barEdge) {
+                    ForEach(BarEdge.allCases, id: \.self) { edge in
+                        Text(edge.displayName).tag(edge)
+                    }
+                }
+                .pickerStyle(.segmented)
                 HStack {
-                    Text("Bottom margin")
+                    Text("Edge margin")
                     Slider(value: $preferences.bottomMargin, in: 0...120, step: 4)
                     Text("\(Int(preferences.bottomMargin)) pt").monospacedDigit().frame(width: 48, alignment: .trailing)
                 }
@@ -26,6 +32,24 @@ struct SettingsView: View {
                             Text(screen.localizedName).tag(ScreenSelection.display(id: id))
                         }
                     }
+                }
+            }
+            Section("Cards") {
+                HStack {
+                    Text("Card width")
+                    Slider(value: $preferences.cardWidth, in: CardMetrics.widthRange, step: 10)
+                    Text("\(Int(preferences.cardWidth)) pt").monospacedDigit().frame(width: 48, alignment: .trailing)
+                }
+                HStack {
+                    Text("Card height")
+                    Slider(value: $preferences.cardHeight, in: CardMetrics.heightRange, step: 4)
+                    Text("\(Int(preferences.cardHeight)) pt").monospacedDigit().frame(width: 48, alignment: .trailing)
+                }
+                HStack {
+                    Text(preferences.cardMetrics.showsSubtitle ? "Two lines per card." : "Compact: one line per card.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reset Size") { preferences.resetCardMetrics() }
                 }
             }
             if let hotkeySection {
@@ -45,7 +69,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 600)
     }
 
     @ViewBuilder

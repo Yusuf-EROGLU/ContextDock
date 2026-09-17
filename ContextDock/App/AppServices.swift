@@ -195,6 +195,9 @@ final class AppServices {
         ObservationLoop.observe { [unowned self] in
             _ = preferences.bottomMargin
             _ = preferences.screenSelection
+            _ = preferences.barEdge
+            _ = preferences.cardWidth
+            _ = preferences.cardHeight
             panelController.relayout()
         }
         ObservationLoop.observe { [unowned self] in

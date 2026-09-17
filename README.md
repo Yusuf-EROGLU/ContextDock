@@ -70,9 +70,11 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
 
 ## Usage
 
-- **Bar**: bottom-center of the chosen display, one card per window, ordered by first
-  appearance. Scrolls horizontally when there are many cards. Hover, active window and keyboard
-  selection have distinct looks. The full title and project path are in the tooltip.
+- **Bar**: attached to the bottom, top, left or right edge of the chosen display (Settings ›
+  Position); left/right lay the cards out vertically. One card per window, ordered by first
+  appearance; scrolls along the bar when there are many cards. Card width and height are
+  adjustable (Settings › Cards; below 50 pt the second line is hidden). Hover, active window and
+  drop target have distinct looks. The full title is in the tooltip.
 - **Left click**: switch to that window (unhides/unminimizes first if needed). If the switch cannot
   be verified you get a short message in the bar, never a dialog.
 - **Drag and drop**: drag a card onto the middle of another card to **stack them into a group**;
@@ -92,8 +94,8 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
   switches (a group entry opens the whole group), Escape closes, `⌘1`–`⌘9` jump to the first nine
   results.
 - **Menu bar item**: Hide/Show Bar, Refresh, Search Windows…, Accessibility status, Settings…, Quit.
-- **Settings**: display, bottom margin, shortcut, show auxiliary windows (dialogs/tool windows),
-  verbose logging, reset all names/badges/groups.
+- **Settings**: position (edge), display, edge margin, card width/height, shortcut, show
+  auxiliary windows (dialogs/tool windows), verbose logging, reset all names/badges/groups.
 
 ### Optional integrations
 
@@ -138,6 +140,7 @@ Remove the Unity/Ghostty integration files if you installed them.
 | Bar shows "Accessibility permission required" although you granted it | The grant belongs to a previous build. Toggle ContextDock off/on in the Accessibility list (see *Signing*). |
 | A window is missing | Auxiliary windows (dialogs, floating tool windows) are hidden by default; enable *Show auxiliary windows*. Some apps do not expose windows on other Spaces. Use Details… to see role/subrole. |
 | Click activates the app but not the window | The app rejected the raise (modal sheet, unsupported attribute). ContextDock shows a message; try again once the dialog is closed. |
+| App launches but shows no bar or menu item, `ps` shows an `AppTranslocation` path | The project files carried `com.apple.quarantine` (copied via AirDrop/Downloads) and the build inherited it. Run `xattr -dr com.apple.quarantine .` in the repo once and reinstall; `scripts/install-local.sh` now clears the flag on the installed app. |
 | A drag does not start | Move at least 5 pt before releasing; a short press is a click. Drop on the middle of a card to group, on its edge to reorder. |
 | Shortcut does not work | Settings shows a conflict message if another app owns it; pick another combination. The menu item always works. |
 | Names or groups disappear after relaunch | Names, badges and groups are session-only by design; window identities cannot be restored safely across launches. |

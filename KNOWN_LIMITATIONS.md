@@ -78,6 +78,12 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 - Ad-hoc signing means a rebuilt binary may need the Accessibility grant re-enabled. See README
   for the self-signed identity workaround. TCC is never reset or bypassed.
 - App Sandbox is off (required for the Accessibility API).
+- **Quarantined sources.** If the repository is copied with `com.apple.quarantine` set (AirDrop,
+  browser download), the built app inherits the flag, Gatekeeper runs it translocated and it may
+  show no UI. `scripts/install-local.sh` strips the flag from the installed copy; strip it from
+  the repo once with `xattr -dr com.apple.quarantine .` (seen 2026-09-17 on a second Mac).
+- **Top edge on a display with a menu bar** may sit a few points lower than the margin asks,
+  because AppKit keeps windows below the menu bar.
 - No auto-update, no App Store build, no launch-at-login in this release. *(by design)*
 
 ## Performance
