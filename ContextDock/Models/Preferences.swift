@@ -58,6 +58,8 @@ final class Preferences {
         static let showAuxiliaryWindows = "showAuxiliaryWindows"
         static let debugLogging = "debugLogging"
         static let barLevelAboveFullScreen = "barLevelAboveFullScreen"
+        static let autoHideEnabled = "autoHideEnabled"
+        static let autoHideDelay = "autoHideDelay"
     }
 
     private let defaults: UserDefaults
@@ -85,6 +87,10 @@ final class Preferences {
         }
     }
     var showAuxiliaryWindows: Bool { didSet { defaults.set(showAuxiliaryWindows, forKey: Keys.showAuxiliaryWindows) } }
+    /// Collapse the bar to its handle when the pointer has not been over it for `autoHideDelay`.
+    var autoHideEnabled: Bool { didSet { defaults.set(autoHideEnabled, forKey: Keys.autoHideEnabled) } }
+    var autoHideDelay: Double { didSet { defaults.set(autoHideDelay, forKey: Keys.autoHideDelay) } }
+    static let autoHideDelayRange: ClosedRange<Double> = 1...30
     var debugLogging: Bool { didSet { defaults.set(debugLogging, forKey: Keys.debugLogging) } }
 
     init(defaults: UserDefaults = .standard) {
@@ -96,6 +102,8 @@ final class Preferences {
             Keys.cardWidth: CardMetrics.defaultWidth,
             Keys.cardHeight: CardMetrics.defaultHeight,
             Keys.showAuxiliaryWindows: false,
+            Keys.autoHideEnabled: true,
+            Keys.autoHideDelay: 5.0,
             Keys.debugLogging: false,
         ])
         barVisible = defaults.bool(forKey: Keys.barVisible)
@@ -104,6 +112,8 @@ final class Preferences {
         cardWidth = min(max(defaults.double(forKey: Keys.cardWidth), CardMetrics.widthRange.lowerBound), CardMetrics.widthRange.upperBound)
         cardHeight = min(max(defaults.double(forKey: Keys.cardHeight), CardMetrics.heightRange.lowerBound), CardMetrics.heightRange.upperBound)
         showAuxiliaryWindows = defaults.bool(forKey: Keys.showAuxiliaryWindows)
+        autoHideEnabled = defaults.bool(forKey: Keys.autoHideEnabled)
+        autoHideDelay = min(max(defaults.double(forKey: Keys.autoHideDelay), Preferences.autoHideDelayRange.lowerBound), Preferences.autoHideDelayRange.upperBound)
         debugLogging = defaults.bool(forKey: Keys.debugLogging)
         if let data = defaults.data(forKey: Keys.screenSelection),
            let selection = try? JSONDecoder().decode(ScreenSelection.self, from: data) {

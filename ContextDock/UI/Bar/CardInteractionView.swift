@@ -30,6 +30,8 @@ struct CardInteractionView: NSViewRepresentable {
     var onHover: (Bool) -> Void
     var makeMenu: () -> NSMenu
     var drag: DragHandlers?
+    /// Reports when a context menu opens/closes so the bar does not auto-hide underneath it.
+    var onMenuVisibility: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> InteractionNSView {
         let view = InteractionNSView()
@@ -47,6 +49,7 @@ struct CardInteractionView: NSViewRepresentable {
         view.onHover = onHover
         view.makeMenu = makeMenu
         view.drag = drag
+        view.onMenuVisibility = onMenuVisibility
     }
 
     final class InteractionNSView: NSView {
@@ -55,6 +58,7 @@ struct CardInteractionView: NSViewRepresentable {
         var onHover: ((Bool) -> Void)?
         var makeMenu: (() -> NSMenu)?
         var drag: DragHandlers?
+        var onMenuVisibility: ((Bool) -> Void)?
         private var trackingArea: NSTrackingArea?
         private var pressed = false
         private var pressLocation: NSPoint?
@@ -118,7 +122,9 @@ struct CardInteractionView: NSViewRepresentable {
 
         private func showMenu(with event: NSEvent) {
             guard let menu = makeMenu?() else { return }
+            onMenuVisibility?(true)
             NSMenu.popUpContextMenu(menu, with: event, for: self)
+            onMenuVisibility?(false)
         }
     }
 }

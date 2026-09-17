@@ -9,6 +9,10 @@ final class BarState {
     var keyboardSelectedItem: BarItemID?
     var toast: Toast?
     var drag: DragState?
+    /// Only the handle is visible; the cards are hidden until the handle is clicked or hovered.
+    var isCollapsed = false
+    /// A context menu is open; auto-hide must wait.
+    var isMenuOpen = false
 
     struct Toast: Equatable {
         var message: String

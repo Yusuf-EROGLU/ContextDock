@@ -23,7 +23,7 @@ person at the Mac, usually because the Accessibility grant is a user action).
 ```bash
 scripts/build.sh            # Debug build — PASS (BUILD SUCCEEDED, no warnings)
 scripts/build.sh Release    # PASS (BUILD SUCCEEDED; ad-hoc signature, identifier com.yusuferoglu.ContextDock)
-scripts/test.sh             # PASS — 67 tests in 13 suites, 0 failures (~0.1 s) after the grouping pivot
+scripts/test.sh             # PASS — 71 tests in 14 suites, 0 failures (~0.1 s) after the grouping pivot
 ```
 
 Unity bridge compile check (not part of the Xcode build):
@@ -37,7 +37,7 @@ Unity bridge compile check (not part of the Xcode build):
 zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC and ünïcode encoded as expected
 ```
 
-## Automated tests (67, all PASS)
+## Automated tests (71, all PASS)
 
 | Suite | Covers |
 |---|---|
@@ -86,6 +86,7 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | G03 | Remove from group / ungroup / group dissolves when a member closes | **PASS** | User test 2026-09-16; automated: BarArrangement tests. |
 | G04 | Group in search (⌃⌥Space) opens all members | **PASS** | User test 2026-09-16. |
 | P01 | Bar position bottom/top/left/right and card size | **PASS** (placement) | 2026-09-17: relaunched once per edge on a 1920×1080 secondary display; frames were bottom (y at screen bottom), top (30 pt below the top, AppKit keeps it under the menu bar), left (x at screen left, 206 pt wide, vertical), right (x+width at screen right). Card width/height sliders relayout live; visual check by the user pending. |
+| P02 | Auto-hide handle: collapses after the delay, expands on click/hover, count shown | **PASS** (collapse) | 2026-09-17: after launch with the pointer away, the panel shrank to the 48×22 handle at the bottom center within the 5 s delay (CG window list). Click/hover expansion and the Settings delay slider: user check pending. |
 | M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **PASS** | Reported by the user on 2026-09-16 after granting Accessibility to the `ContextDock Dev`-signed build. |
 
 ### How to test grouping (G01–G04)

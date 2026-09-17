@@ -24,6 +24,7 @@ final class AppServices {
     private let hotkeyRegistrar = CarbonHotkeyRegistrar()
     private(set) lazy var hotkeyModel = HotkeyModel(registrar: hotkeyRegistrar, persistence: persistence)
     private(set) lazy var unityBridge = UnityBridgeMonitor(store: store)
+    private(set) lazy var autoHide = AutoHideController(preferences: preferences, barState: barState, panel: panelController.window)
 
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
@@ -71,6 +72,7 @@ final class AppServices {
             panelController.show()
         }
         unityBridge.start()
+        autoHide.start()
         hotkeyModel.registerSaved()
         Log.app.info("ContextDock started")
     }
@@ -92,6 +94,8 @@ final class AppServices {
         statusItem.isBarVisible = { [unowned self] in panelController.isShown }
         statusItem.permissionState = { [unowned self] in store.permission }
         statusItem.onToggleBar = { [unowned self] in preferences.barVisible.toggle() }
+        statusItem.isBarCollapsed = { [unowned self] in barState.isCollapsed }
+        statusItem.onToggleCollapsed = { [unowned self] in setCollapsed(!barState.isCollapsed) }
         statusItem.onRefresh = { [unowned self] in refresh() }
         statusItem.onSearch = { [unowned self] in search.toggle() }
         statusItem.onSettings = { [unowned self] in settingsWindow.show() }
@@ -115,6 +119,10 @@ final class AppServices {
             permissionWindow.show()
         }
         permissionWindow.onRecheck = { [unowned self] in refresh() }
+        panelController.onToggleCollapsed = { [unowned self] in setCollapsed(!barState.isCollapsed) }
+        panelController.onExpand = { [unowned self] in setCollapsed(false) }
+        autoHide.isBlocked = { [unowned self] in popup.isPresented || search.isShown }
+        autoHide.onCollapse = { [unowned self] in setCollapsed(true) }
         cardActions.onActivateWindow = { [unowned self] id in activate(.window(id)) }
         cardActions.onActivateGroup = { [unowned self] id in activate(.group(id)) }
         search.onChoose = { [unowned self] item in activate(item) }
@@ -240,6 +248,16 @@ final class AppServices {
     }
 
     // MARK: - Actions
+
+    /// Collapses the bar to its handle or expands it; the auto-hide delay restarts on expand.
+    func setCollapsed(_ collapsed: Bool) {
+        if collapsed {
+            popup.dismiss()
+        } else {
+            autoHide.noteExpanded()
+        }
+        panelController.setCollapsed(collapsed)
+    }
 
     func refresh() {
         let worker = self.worker

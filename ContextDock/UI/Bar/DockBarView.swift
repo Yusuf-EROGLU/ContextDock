@@ -17,13 +17,44 @@ struct DockBarView: View {
     var onMenu: (InteractionTarget) -> NSMenu
     var onRequestPermission: () -> Void
     var dragHandlers: DragHandlers
+    var onToggleCollapsed: () -> Void
+    var onExpand: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var metrics: CardMetrics { preferences.cardMetrics }
     private var axis: Axis { preferences.barEdge.isVertical ? .vertical : .horizontal }
+    private var edge: BarEdge { preferences.barEdge }
+
+    /// The handle is only offered while windows can be listed; the permission states stay
+    /// fully visible.
+    private var showsHandle: Bool { store.permission.isGranted }
 
     var body: some View {
+        let handle = HandleView(
+            count: store.items.count,
+            isCollapsed: barState.isCollapsed,
+            edge: edge,
+            onToggle: onToggleCollapsed,
+            onHoverExpand: onExpand
+        )
+        Group {
+            if barState.isCollapsed && showsHandle {
+                handle.padding(2)
+            } else if !showsHandle {
+                bar
+            } else {
+                switch edge {
+                case .bottom: VStack(spacing: HandleView.gap) { handle; bar }
+                case .top: VStack(spacing: HandleView.gap) { bar; handle }
+                case .left: HStack(spacing: HandleView.gap) { bar; handle }
+                case .right: HStack(spacing: HandleView.gap) { handle; bar }
+                }
+            }
+        }
+    }
+
+    private var bar: some View {
         ZStack(alignment: .top) {
             content
             if let toast = barState.toast {
@@ -128,7 +159,8 @@ struct DockBarView: View {
                 }
             },
             makeMenu: { onMenu(target) },
-            drag: dragHandlers
+            drag: dragHandlers,
+            onMenuVisibility: { open in barState.isMenuOpen = open }
         )
     }
 
@@ -237,8 +269,18 @@ struct DockBarView: View {
         return CGFloat(itemCount) * card + CGFloat(itemCount - 1) * spacing + 2 * padding
     }
 
-    /// Size across the bar's edge.
+    /// Size across the bar's edge (cards only; the handle is added by the panel controller).
     static func thickness(metrics: CardMetrics, vertical: Bool) -> CGFloat {
         (vertical ? metrics.width : metrics.height) + 2 * padding
+    }
+
+    /// Extra thickness the handle adds when the bar is expanded.
+    static func handleThickness(vertical: Bool) -> CGFloat {
+        (vertical ? HandleView.size.width : HandleView.size.height) + HandleView.gap
+    }
+
+    /// Panel size when collapsed to the handle alone (plus a little hit slop).
+    static var collapsedSize: CGSize {
+        CGSize(width: HandleView.size.width + 4, height: HandleView.size.height + 4)
     }
 }

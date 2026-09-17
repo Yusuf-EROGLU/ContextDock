@@ -75,6 +75,11 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
   appearance; scrolls along the bar when there are many cards. Card width and height are
   adjustable (Settings › Cards; below 50 pt the second line is hidden). Hover, active window and
   drop target have distinct looks. The full title is in the tooltip.
+- **Handle / auto-hide**: a small capsule on the bar shows the number of cards. Click it to
+  collapse the bar to just the capsule; click it again, or hover it for half a second, to expand.
+  With *Collapse to a handle when not in use* on (default, 5 s, adjustable 1–30 s in Settings) the
+  bar collapses by itself when the pointer stays away from it; open menus, popups and drags pause
+  the timer. The menu bar item also offers *Collapse Bar to Handle* / *Expand Bar*.
 - **Left click**: switch to that window (unhides/unminimizes first if needed). If the switch cannot
   be verified you get a short message in the bar, never a dialog.
 - **Drag and drop**: drag a card onto the middle of another card to **stack them into a group**;
@@ -94,8 +99,9 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
   switches (a group entry opens the whole group), Escape closes, `⌘1`–`⌘9` jump to the first nine
   results.
 - **Menu bar item**: Hide/Show Bar, Refresh, Search Windows…, Accessibility status, Settings…, Quit.
-- **Settings**: position (edge), display, edge margin, card width/height, shortcut, show
-  auxiliary windows (dialogs/tool windows), verbose logging, reset all names/badges/groups.
+- **Settings**: position (edge), auto-hide toggle and delay, display, edge margin, card
+  width/height, shortcut, show auxiliary windows (dialogs/tool windows), verbose logging, reset
+  all names/badges/groups.
 
 ### Optional integrations
 

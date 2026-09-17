@@ -14,6 +14,8 @@ final class DockPanelController {
     var onActivateMember: ((WindowSessionID) -> Void)?
     var onMenu: ((InteractionTarget) -> NSMenu)?
     var onRequestPermission: (() -> Void)?
+    var onToggleCollapsed: (() -> Void)?
+    var onExpand: (() -> Void)?
     let dragCoordinator: DragCoordinator
 
     init(store: WindowStore, barState: BarState, preferences: Preferences) {
@@ -31,7 +33,9 @@ final class DockPanelController {
             onActivateMember: { [weak self] id in self?.onActivateMember?(id) },
             onMenu: { [weak self] target in self?.onMenu?(target) ?? NSMenu() },
             onRequestPermission: { [weak self] in self?.onRequestPermission?() },
-            dragHandlers: dragCoordinator.handlers
+            dragHandlers: dragCoordinator.handlers,
+            onToggleCollapsed: { [weak self] in self?.onToggleCollapsed?() },
+            onExpand: { [weak self] in self?.onExpand?() }
         )
         let hosting = FirstMouseHostingView(rootView: root)
         hosting.sizingOptions = []
@@ -59,34 +63,62 @@ final class DockPanelController {
 
     var isShown: Bool { isVisible }
 
-    /// Recomputes the frame from the current item count, edge, card size, screen and margin.
+    /// Recomputes the frame from the current item count, edge, card size, screen, margin and
+    /// collapsed state. When collapsed only the handle is shown at the same edge position.
     func relayout() {
         guard let screen = ScreenPlacement.resolve(preferences.screenSelection) else { return }
-        let count = store.permission.isGranted ? store.items.count : 0
+        let granted = store.permission.isGranted
+        let count = granted ? store.items.count : 0
         let metrics = preferences.cardMetrics
         let vertical = preferences.barEdge.isVertical
-        let frame = ScreenPlacement.barFrame(
-            edge: preferences.barEdge,
-            preferredLength: DockBarView.preferredLength(itemCount: count, metrics: metrics, vertical: vertical),
-            thickness: DockBarView.thickness(metrics: metrics, vertical: vertical),
-            margin: CGFloat(preferences.bottomMargin),
-            on: screen
-        )
+        let frame: NSRect
+        if barState.isCollapsed && granted {
+            let size = DockBarView.collapsedSize
+            frame = ScreenPlacement.barFrame(
+                edge: preferences.barEdge,
+                preferredLength: vertical ? size.height : size.width,
+                thickness: vertical ? size.width : size.height,
+                margin: CGFloat(preferences.bottomMargin),
+                on: screen
+            )
+        } else {
+            let handle = granted ? DockBarView.handleThickness(vertical: vertical) : 0
+            frame = ScreenPlacement.barFrame(
+                edge: preferences.barEdge,
+                preferredLength: DockBarView.preferredLength(itemCount: count, metrics: metrics, vertical: vertical),
+                thickness: DockBarView.thickness(metrics: metrics, vertical: vertical) + handle,
+                margin: CGFloat(preferences.bottomMargin),
+                on: screen
+            )
+        }
         if panel.frame != frame {
             panel.setFrame(frame, display: true)
         }
+    }
+
+    /// Collapses to the handle or expands to the full bar.
+    func setCollapsed(_ collapsed: Bool) {
+        guard barState.isCollapsed != collapsed else { return }
+        barState.isCollapsed = collapsed
+        if collapsed {
+            barState.hoveredItem = nil
+        }
+        relayout()
     }
 
     /// Screen coordinates of an item, used to anchor popovers/panels.
     func anchorRect(for id: BarItemID) -> NSRect {
         guard let index = store.items.firstIndex(where: { $0.id == id }) else { return panel.frame }
         let metrics = preferences.cardMetrics
+        let handle = store.permission.isGranted ? DockBarView.handleThickness(vertical: preferences.barEdge.isVertical) : 0
         if preferences.barEdge.isVertical {
             // First item at the top; AppKit coordinates grow upwards.
             let y = panel.frame.maxY - DockBarView.padding - CGFloat(index + 1) * metrics.height - CGFloat(index) * DockBarView.spacing
-            return NSRect(x: panel.frame.minX, y: y, width: panel.frame.width, height: metrics.height)
+            let x = preferences.barEdge == .right ? panel.frame.minX + handle : panel.frame.minX
+            return NSRect(x: x, y: y, width: panel.frame.width - handle, height: metrics.height)
         }
         let x = panel.frame.minX + DockBarView.padding + CGFloat(index) * (metrics.width + DockBarView.spacing)
-        return NSRect(x: x, y: panel.frame.minY, width: metrics.width, height: panel.frame.height)
+        let y = preferences.barEdge == .top ? panel.frame.minY + handle : panel.frame.minY
+        return NSRect(x: x, y: y, width: metrics.width, height: panel.frame.height - handle)
     }
 }

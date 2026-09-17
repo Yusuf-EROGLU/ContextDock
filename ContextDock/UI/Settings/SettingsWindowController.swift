@@ -18,6 +18,15 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Collapse to a handle when not in use", isOn: $preferences.autoHideEnabled)
+                HStack {
+                    Text("After")
+                    Slider(value: $preferences.autoHideDelay, in: Preferences.autoHideDelayRange, step: 1)
+                        .disabled(!preferences.autoHideEnabled)
+                    Text("\(Int(preferences.autoHideDelay)) s").monospacedDigit().frame(width: 48, alignment: .trailing)
+                }
+                Text("Click the handle to collapse or expand; hovering the handle for half a second also expands. Menus, popups and drags pause the timer.")
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Text("Edge margin")
                     Slider(value: $preferences.bottomMargin, in: 0...120, step: 4)
@@ -69,7 +78,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 600)
+        .frame(width: 520, height: 680)
     }
 
     @ViewBuilder

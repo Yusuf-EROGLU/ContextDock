@@ -66,6 +66,15 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 - Bridge C# was compiled against Unity 6000.0.58f1 assemblies with the Editor's Roslyn; it has
   not yet been exercised inside a running Editor. *(verify)*
 
+## Auto-hide
+
+- **No reserved screen space.** macOS offers third-party apps no public way to reserve screen
+  area the way the Dock does, so zoomed windows can extend under an expanded bar. The auto-hide
+  handle is the mitigation: the bar collapses to a small capsule when not in use. Moving or
+  resizing other apps' windows to avoid the bar was considered and rejected by the user.
+- Auto-hide polls the pointer position twice a second while the bar is expanded (no key or
+  event monitoring); when collapsed nothing polls.
+
 ## Removed on purpose
 
 - **Project folder binding and Git branch display** were built (M2) and then removed on
