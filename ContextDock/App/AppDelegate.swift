@@ -22,8 +22,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// True when the app was launched as the host of an XCTest/Swift Testing run. The exact
+    /// environment variables differ between Xcode versions, so several signals are checked:
+    /// XCTest-prefixed variables, the test bundle injection library, and the presence of the
+    /// XCTest runtime in the process.
     static var isRunningAsTestHost: Bool {
         let env = ProcessInfo.processInfo.environment
-        return env["XCTestSessionIdentifier"] != nil || env["XCTestBundlePath"] != nil || env["XCTestConfigurationFilePath"] != nil
+        if env.keys.contains(where: { $0.hasPrefix("XCTest") || $0.hasPrefix("SWT_") }) { return true }
+        if let inserted = env["DYLD_INSERT_LIBRARIES"], inserted.contains("XCTest") || inserted.contains("Testing") { return true }
+        if NSClassFromString("XCTestCase") != nil { return true }
+        if Bundle.allBundles.contains(where: { $0.bundlePath.hasSuffix(".xctest") }) { return true }
+        return false
     }
 }
