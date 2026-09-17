@@ -23,9 +23,6 @@ struct HandleView: View {
             Text("\(count)")
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-            Text(count == 1 ? "window" : "windows")
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
         }
         .foregroundStyle(hovering ? Color.primary : Color.secondary)
         .frame(width: Self.size.width, height: Self.size.height)
