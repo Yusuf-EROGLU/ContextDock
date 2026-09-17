@@ -4,7 +4,7 @@ import SwiftUI
 /// The small capsule attached to the bar. Shows the number of cards; clicking it collapses or
 /// expands the bar, and hovering it for a moment expands a collapsed bar.
 struct HandleView: View {
-    static let size = CGSize(width: 44, height: 18)
+    static let size = CGSize(width: 80, height: 28)
     static let gap: CGFloat = 4
     static let hoverExpandDelay: Duration = .milliseconds(500)
 
@@ -17,12 +17,15 @@ struct HandleView: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 5) {
             Image(systemName: chevron)
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(size: 10, weight: .bold))
             Text("\(count)")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+            Text(count == 1 ? "window" : "windows")
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
         }
         .foregroundStyle(hovering ? Color.primary : Color.secondary)
         .frame(width: Self.size.width, height: Self.size.height)

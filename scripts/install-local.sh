@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Builds a Release ContextDock.app and copies it to ~/Applications/ContextDock.app.
-# Run this yourself; it never touches other apps or system permissions.
+# Builds a Release ContextDock.app and copies it to /Applications/ContextDock.app (or, with
+# --user, to ~/Applications/ContextDock.app). Run this yourself; it never touches other apps
+# or system permissions.
 #
 # Optional: export CODE_SIGN_IDENTITY="ContextDock Dev" to sign with a self-signed
 # identity so the Accessibility grant survives rebuilds (see README).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DEST="$HOME/Applications/ContextDock.app"
+DEST="/Applications/ContextDock.app"
+if [ "${1:-}" = "--user" ]; then
+  DEST="$HOME/Applications/ContextDock.app"
+fi
 SRC=".build/DerivedData/Build/Products/Release/ContextDock.app"
 
 scripts/build.sh Release
@@ -17,12 +21,21 @@ if pgrep -x ContextDock >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$HOME/Applications"
+mkdir -p "$(dirname "$DEST")"
+if [ ! -w "$(dirname "$DEST")" ]; then
+  echo "No write access to $(dirname "$DEST"). Re-run with sudo, or use: scripts/install-local.sh --user" >&2
+  exit 1
+fi
 if [ -d "$DEST" ]; then
   echo "==> Replacing existing $DEST"
   rm -rf "$DEST"
 fi
 ditto "$SRC" "$DEST"
+# Avoid two copies fighting over the menu bar and the Accessibility grant.
+if [ "$DEST" = "/Applications/ContextDock.app" ] && [ -d "$HOME/Applications/ContextDock.app" ]; then
+  echo "==> Removing the older copy at ~/Applications/ContextDock.app"
+  rm -rf "$HOME/Applications/ContextDock.app"
+fi
 # A project copied over AirDrop/Downloads carries com.apple.quarantine on its files; the build
 # inherits it and Gatekeeper would run the app translocated (and it may never show its bar).
 # This is our own build product, so clearing the flag is legitimate.

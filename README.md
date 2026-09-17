@@ -43,12 +43,16 @@ regenerates it automatically when `project.yml` is newer and xcodegen is install
 ## Install locally
 
 ```bash
-scripts/install-local.sh    # builds Release and copies to ~/Applications/ContextDock.app
-open ~/Applications/ContextDock.app
+scripts/install-local.sh          # builds Release and copies to /Applications/ContextDock.app
+scripts/install-local.sh --user   # …or to ~/Applications/ContextDock.app
+open /Applications/ContextDock.app
 ```
 
-The script refuses to replace a running ContextDock, never touches other apps, and never
-changes permissions.
+The script refuses to replace a running ContextDock, removes an older copy in `~/Applications`
+when installing system-wide (so two copies never compete for the menu bar), clears the
+quarantine flag on the installed copy, and never changes permissions. The app icon is rendered
+by `scripts/icon/render-icon.swift` into the asset catalog (`swift scripts/icon/render-icon.swift
+ContextDock/Resources/Assets.xcassets/AppIcon.appiconset` to regenerate).
 
 ### Accessibility permission
 
@@ -135,7 +139,7 @@ Both are optional, documented in their own READMEs, and never installed automati
 
 ## Uninstall
 
-Quit ContextDock, delete `~/Applications/ContextDock.app`, optionally delete
+Quit ContextDock, delete `/Applications/ContextDock.app` (or `~/Applications/ContextDock.app`), optionally delete
 `~/Library/Application Support/ContextDock/` and remove ContextDock from the Accessibility list.
 Remove the Unity/Ghostty integration files if you installed them.
 
