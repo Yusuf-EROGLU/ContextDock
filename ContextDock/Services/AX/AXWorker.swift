@@ -327,6 +327,11 @@ final class AXWorker {
             }
         )
 
+        if !changes.added.isEmpty || !changes.removed.isEmpty || !changes.readopted.isEmpty {
+            let name = session.info.applicationName
+            let added = changes.added.count, removed = changes.removed.count, readopted = changes.readopted.count
+            Log.ax.notice("\(name, privacy: .public): +\(added) windows, -\(removed), readopted \(readopted)")
+        }
         for id in changes.added {
             windowIndex[id] = session.key
             if let element = session.tracker.element(for: id) {
@@ -419,6 +424,8 @@ final class AXWorker {
             guard let windowID = token.window, var session = sessions[key] else { return }
             forgetWindow(windowID, in: &session)
             sessions[key] = session
+            let name = session.info.applicationName
+            Log.ax.notice("\(name, privacy: .public): window destroyed notification")
             emit()
 
         case AXNotificationName.titleChanged:

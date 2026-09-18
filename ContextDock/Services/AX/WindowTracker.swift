@@ -22,7 +22,7 @@ enum ElementProbe: Sendable, Equatable {
 struct WindowTracker<Element: ElementIdentity> {
     struct Tracked {
         let id: WindowSessionID
-        let element: Element
+        var element: Element
         var snapshot: WindowSnapshot
         var missedScans: Int
     }
@@ -36,6 +36,9 @@ struct WindowTracker<Element: ElementIdentity> {
     struct Changes: Equatable {
         var added: [WindowSessionID] = []
         var removed: [WindowSessionID] = []
+        /// Windows whose dead element was replaced by a new one with the same title (the app
+        /// re-created its accessibility element, e.g. after sleep); identity is preserved.
+        var readopted: [WindowSessionID] = []
     }
 
     let process: ProcessInstanceKey
@@ -70,7 +73,23 @@ struct WindowTracker<Element: ElementIdentity> {
             let tracked = windows.values
                 .sorted { $0.snapshot.firstSeenSequence < $1.snapshot.firstSeenSequence }
                 .map { (id: $0.id, element: $0.element) }
-            let outcome = WindowMatcher.match(tracked: tracked, fresh: fresh.map(\.element))
+            var outcome = WindowMatcher.match(tracked: tracked, fresh: fresh.map(\.element))
+
+            // Some apps hand out new AX elements for the same window (seen after sleep/lock).
+            // When a tracked element is gone *and* exactly one new element carries the same
+            // title, keep the session id and adopt the new element instead of churning cards.
+            if !outcome.missing.isEmpty, !outcome.unmatchedFresh.isEmpty {
+                for id in outcome.missing {
+                    guard let window = windows[id], let title = window.snapshot.title, !title.isEmpty else { continue }
+                    let candidates = outcome.unmatchedFresh.filter { fresh[$0].attributes.title == title }
+                    guard candidates.count == 1, let index = candidates.first, probe(window.element) == .dead else { continue }
+                    windows[id]?.element = fresh[index].element
+                    outcome.matched[id] = index
+                    outcome.unmatchedFresh.removeAll { $0 == index }
+                    outcome.missing.removeAll { $0 == id }
+                    changes.readopted.append(id)
+                }
+            }
 
             for (id, index) in outcome.matched {
                 guard var window = windows[id] else { continue }

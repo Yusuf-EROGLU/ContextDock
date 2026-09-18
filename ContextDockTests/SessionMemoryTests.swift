@@ -136,10 +136,16 @@ struct SessionMemoryTests {
         store.stack(.window(g.id), onto: .window(u.id))
         #expect(persistence.state.groups.count == 1)
 
-        // User closes the Ghostty window: group dissolves and the file follows.
+        // User closes the Ghostty window: the group dissolves on screen; the record is kept for
+        // the grace period (an app may re-create its window) and then dropped.
         store.apply(snapshot([(unity, [u])]))
         memory.sync()
+        #expect(store.group(containing: u.id) == nil)
+        #expect(persistence.state.groups.count == 1, "still remembered during the grace period")
+        memory.lostGrace = 0
+        memory.sync()
         #expect(persistence.state.groups.isEmpty)
+        memory.lostGrace = 120
 
         // Rebuild the group, then simulate shutdown: windows vanish but the file keeps the group.
         let g2 = WindowSnapshot.test(process: ghostty.key, sequence: 3, title: "G")
@@ -152,6 +158,34 @@ struct SessionMemoryTests {
         memory.sync()
         #expect(persistence.state.groups.count == 1)
         #expect(persistence.state.windows.count == 2)
+    }
+
+    @Test("a window re-created by its app within the grace period gets its name and group back")
+    func lostAndRecreated() throws {
+        let (store, persistence, dir) = makeStore()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let unity = ProcessSnapshot.test(key: .test(pid: 10, start: 1), kind: .unityEditor, name: "Unity")
+        let ghostty = ProcessSnapshot.test(key: .test(pid: 20, start: 2), kind: .ghostty, name: "Ghostty")
+        let u = WindowSnapshot.test(process: unity.key, sequence: 1, title: "U")
+        let g = WindowSnapshot.test(process: ghostty.key, sequence: 2, title: "backend")
+        store.apply(snapshot([(unity, [u]), (ghostty, [g])]))
+        let memory = SessionMemory(store: store, persistence: persistence)
+        store.onItemsChanged = { memory.sync() }
+        memory.sync()
+        store.rename(g.id, to: "Backend")
+        let groupID = store.stack(.window(g.id), onto: .window(u.id))!
+
+        // Ghostty drops the window and brings back a new one with the same title.
+        store.apply(snapshot([(unity, [u])]))
+        memory.sync()
+        #expect(store.group(groupID) == nil)
+        let g2 = WindowSnapshot.test(process: ghostty.key, sequence: 3, title: "backend")
+        store.apply(snapshot([(unity, [u]), (ghostty, [g2])]))
+        memory.sync()
+        let restored = try #require(store.group(containing: u.id))
+        #expect(restored.id == groupID)
+        #expect(Set(restored.members) == [u.id, g2.id])
+        #expect(store.card(for: g2.id)?.title == "Backend")
     }
 
     @Test("records not matched within the restore window are dropped")

@@ -154,3 +154,42 @@ struct ProcessInstanceKeyResolverTests {
         #expect((ms ?? 0) > 1_600_000_000_000)
     }
 }
+
+@Suite("WindowTracker re-adoption")
+struct WindowTrackerReadoptionTests {
+    @Test("a dead element replaced by a same-title element keeps the session id")
+    func readoptSameTitle() {
+        var tracker = WindowTracker<IntElement>(process: .test())
+        let seq = SequenceCounter()
+        _ = tracker.apply(.success([(IntElement(id: 1), .window("Game - Unity")), (IntElement(id: 2), .window("Console"))]), nextSequence: seq.next, probe: { _ in .alive })
+        let unityID = tracker.snapshots[0].id
+
+        // The app re-created the Unity window's element (id 9); the old one (1) is dead.
+        let changes = tracker.apply(.success([(IntElement(id: 9), .window("Game - Unity")), (IntElement(id: 2), .window("Console"))]), nextSequence: seq.next, probe: { element in element.id == 1 ? .dead : .alive })
+        #expect(changes.readopted == [unityID])
+        #expect(changes.added.isEmpty && changes.removed.isEmpty)
+        #expect(tracker.snapshots.count == 2)
+        #expect(tracker.element(for: unityID) == IntElement(id: 9))
+    }
+
+    @Test("no re-adoption when the old element still answers or the title is ambiguous")
+    func noReadoptWhenAliveOrAmbiguous() {
+        var tracker = WindowTracker<IntElement>(process: .test())
+        let seq = SequenceCounter()
+        _ = tracker.apply(.success([(IntElement(id: 1), .window("zsh"))]), nextSequence: seq.next, probe: { _ in .alive })
+        let original = tracker.snapshots[0].id
+
+        // Old element alive but unlisted: the new same-title window is a genuinely new window.
+        var changes = tracker.apply(.success([(IntElement(id: 5), .window("zsh"))]), nextSequence: seq.next, probe: { _ in .alive })
+        #expect(changes.readopted.isEmpty)
+        #expect(changes.added.count == 1)
+        #expect(tracker.snapshots.map(\.id).contains(original))
+
+        // Two candidates with the same title: ambiguous, so nothing is adopted.
+        var tracker2 = WindowTracker<IntElement>(process: .test())
+        _ = tracker2.apply(.success([(IntElement(id: 1), .window("zsh"))]), nextSequence: seq.next, probe: { _ in .alive })
+        changes = tracker2.apply(.success([(IntElement(id: 5), .window("zsh")), (IntElement(id: 6), .window("zsh"))]), nextSequence: seq.next, probe: { _ in .dead })
+        #expect(changes.readopted.isEmpty)
+        #expect(changes.added.count == 2)
+    }
+}
