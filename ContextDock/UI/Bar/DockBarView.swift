@@ -142,7 +142,9 @@ struct DockBarView: View {
                     AnyView(interaction(.member(member.id, in: group.id), click: { onActivateMember(member.id) }))
                 }
             )
-            .overlay(interaction(.item(item.id), click: { onActivate(item.id) }))
+            // The group's own interaction layer sits *behind* the card so the member icons'
+            // layers stay on top: clicking/dragging an icon then targets that member, not the group.
+            .background(interaction(.item(item.id), click: { onActivate(item.id) }))
         }
     }
 
