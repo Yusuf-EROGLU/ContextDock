@@ -58,6 +58,7 @@
 		BC9CC377F7B652052194EDAA /* ColorToken+Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F70783C84A5E9C7029C3578 /* ColorToken+Color.swift */; };
 		C3F66317114E90C4373BC071 /* WindowFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCEE4A99597E2B0E9D32DD47 /* WindowFilter.swift */; };
 		C4CE8AE5F64EC56BF5C76464 /* WindowMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BEFC36628DF1E3870F09554 /* WindowMatcher.swift */; };
+		CBDA02DB92EAEE54FEB0B0C5 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 536FBC2B6CF303F2C3799C11 /* DiagnosticLog.swift */; };
 		CC37776EEC5760E4C0AAA279 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E0CCDFCDE5143AFEEA6904 /* StatusItemController.swift */; };
 		D2BB22EC246E4BDAED8FBF7E /* DockPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E89292EFCDC463B2297C26 /* DockPanel.swift */; };
 		D5046661B3E1CB1F9D5B3FF3 /* ContextResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173CBAAF78027665F9B614EF /* ContextResolver.swift */; };
@@ -128,6 +129,7 @@
 		5113EBE74E304D8F9D0D8AAA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		52D19B8DF87493337C80D2C4 /* JSONStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONStoreTests.swift; sourceTree = "<group>"; };
 		533E9D561F7FC71ED61DC291 /* WindowDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDetailsView.swift; sourceTree = "<group>"; };
+		536FBC2B6CF303F2C3799C11 /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		569F8A6951A043C4FF2E9443 /* RunningAppsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningAppsProvider.swift; sourceTree = "<group>"; };
 		5D8CC66C0DE2BD14E359514D /* AXFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXFailure.swift; sourceTree = "<group>"; };
 		5F70783C84A5E9C7029C3578 /* ColorToken+Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ColorToken+Color.swift"; sourceTree = "<group>"; };
@@ -399,6 +401,7 @@
 			children = (
 				3EC050B9AA721D2CBAC745AB /* AXActor.swift */,
 				6B218721A06F6FC7334788BD /* Debouncer.swift */,
+				536FBC2B6CF303F2C3799C11 /* DiagnosticLog.swift */,
 				6A0BD71F985F8501830F10C6 /* Log.swift */,
 				8DDF8FB3473AB6DA0CF100AB /* ObservationLoop.swift */,
 				72DC02D03FD3C1E2CD4D8FFE /* ProcessStartTime.swift */,
@@ -600,6 +603,7 @@
 				D5046661B3E1CB1F9D5B3FF3 /* ContextResolver.swift in Sources */,
 				A47795BC171FCF13D58C55BD /* Customization.swift in Sources */,
 				51B9F0CC7B380FE61CE200A5 /* Debouncer.swift in Sources */,
+				CBDA02DB92EAEE54FEB0B0C5 /* DiagnosticLog.swift in Sources */,
 				DA1452F65554C5C4568D8AB6 /* DockBarView.swift in Sources */,
 				D2BB22EC246E4BDAED8FBF7E /* DockPanel.swift in Sources */,
 				5FBB5B89B25D9FCF3502FAD7 /* DockPanelController.swift in Sources */,

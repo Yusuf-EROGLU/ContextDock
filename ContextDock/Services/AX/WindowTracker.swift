@@ -79,15 +79,36 @@ struct WindowTracker<Element: ElementIdentity> {
             // When a tracked element is gone *and* exactly one new element carries the same
             // title, keep the session id and adopt the new element instead of churning cards.
             if !outcome.missing.isEmpty, !outcome.unmatchedFresh.isEmpty {
-                for id in outcome.missing {
-                    guard let window = windows[id], let title = window.snapshot.title, !title.isEmpty else { continue }
-                    let candidates = outcome.unmatchedFresh.filter { fresh[$0].attributes.title == title }
-                    guard candidates.count == 1, let index = candidates.first, probe(window.element) == .dead else { continue }
+                var probes: [WindowSessionID: ElementProbe] = [:]
+                func probed(_ id: WindowSessionID) -> ElementProbe {
+                    if let known = probes[id] { return known }
+                    let result = windows[id].map { probe($0.element) } ?? .dead
+                    probes[id] = result
+                    return result
+                }
+                func adopt(_ id: WindowSessionID, _ index: Int) {
                     windows[id]?.element = fresh[index].element
                     outcome.matched[id] = index
                     outcome.unmatchedFresh.removeAll { $0 == index }
                     outcome.missing.removeAll { $0 == id }
                     changes.readopted.append(id)
+                }
+                // Pass 1: unique same-title replacement.
+                for id in outcome.missing {
+                    guard let window = windows[id], let title = window.snapshot.title, !title.isEmpty else { continue }
+                    let candidates = outcome.unmatchedFresh.filter { fresh[$0].attributes.title == title }
+                    guard candidates.count == 1, let index = candidates.first, probed(id) == .dead else { continue }
+                    adopt(id, index)
+                }
+                // Pass 2: every missing element is dead and exactly as many new elements appeared:
+                // the app re-created its windows (seen after sleep); pair them in order.
+                let dead = outcome.missing.filter { probed($0) == .dead }
+                if !dead.isEmpty, dead.count == outcome.missing.count, dead.count == outcome.unmatchedFresh.count {
+                    let orderedDead = dead.sorted { (windows[$0]?.snapshot.firstSeenSequence ?? 0) < (windows[$1]?.snapshot.firstSeenSequence ?? 0) }
+                    let orderedFresh = outcome.unmatchedFresh.sorted()
+                    for (id, index) in zip(orderedDead, orderedFresh) {
+                        adopt(id, index)
+                    }
                 }
             }
 

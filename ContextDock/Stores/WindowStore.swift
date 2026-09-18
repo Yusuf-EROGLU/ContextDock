@@ -47,7 +47,12 @@ final class WindowStore {
         for key in bridgeReports.keys where !liveKeys.contains(key) {
             bridgeReports[key] = nil
         }
+        let groupsBefore = arrangement.groupList.count
         arrangement.sync(windowsInFirstSeenOrder: newSnapshot.windows.map(\.id))
+        let groupsAfter = arrangement.groupList.count
+        if groupsAfter < groupsBefore {
+            DiagnosticLog.write("store", "\(groupsBefore - groupsAfter) group(s) dissolved by window removal (\(removed.count) windows removed, \(liveIDs.subtracting(previousIDs).count) added)")
+        }
         for window in newSnapshot.windows where window.isFocused && newSnapshot.processes[window.process]?.isActive == true {
             arrangement.noteFocused(window.id)
         }

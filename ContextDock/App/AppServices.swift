@@ -77,9 +77,11 @@ final class AppServices {
         autoHide.start()
         hotkeyModel.registerSaved()
         Log.app.info("ContextDock started")
+        DiagnosticLog.write("app", "started, version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
     }
 
     func shutdown() {
+        DiagnosticLog.write("app", "terminating")
         snapshotTask?.cancel()
         for observer in observers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
@@ -176,10 +178,18 @@ final class AppServices {
             Task { @MainActor in self?.memory.freeze() }
         })
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+            DiagnosticLog.write("app", "system will sleep")
             Task { @AXActor in worker.setMode(.paused) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            DiagnosticLog.write("app", "system did wake")
             Task { @MainActor in self?.applyWorkerMode() }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { _ in
+            DiagnosticLog.write("app", "screens did sleep")
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { _ in
+            DiagnosticLog.write("app", "screens did wake")
         })
         observers.append(center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { _ in
             Task { @AXActor in worker.setMode(.paused) }

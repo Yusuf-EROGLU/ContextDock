@@ -120,6 +120,7 @@ final class AXWorker {
 
     func setMode(_ newMode: Mode) {
         let wasPaused = mode == .paused
+        if mode != newMode { DiagnosticLog.write("ax", "mode \(String(describing: mode)) -> \(String(describing: newMode))") }
         mode = newMode
         if wasPaused && newMode != .paused {
             // Give apps (and tccd) a moment to finish waking before the first full scan.
@@ -155,6 +156,7 @@ final class AXWorker {
                 // Tolerate a transient failure (wake, unlock); keep everything and check again.
                 consecutiveTrustFailures += 1
                 Log.ax.notice("Accessibility trust check failed (\(self.consecutiveTrustFailures)/\(self.configuration.trustFailuresBeforeRevoke))")
+                DiagnosticLog.write("ax", "trust check failed \(consecutiveTrustFailures)/\(configuration.trustFailuresBeforeRevoke)")
                 if consecutiveTrustFailures < configuration.trustFailuresBeforeRevoke {
                     return
                 }
@@ -180,6 +182,7 @@ final class AXWorker {
             let resolution = keyResolver.resolve(pid: app.pid, launchDate: app.launchDate)
             if let replaced = resolution.replaced {
                 // Same pid, different start time: a new process reused the pid.
+                DiagnosticLog.write("ax", "pid \(app.pid) (\(app.localizedName)) start time changed: \(String(describing: replaced.start)) -> \(String(describing: resolution.key.start))")
                 teardownSession(replaced)
             }
             let key = resolution.key
@@ -256,6 +259,7 @@ final class AXWorker {
 
     private func teardownSession(_ key: ProcessInstanceKey) {
         guard var session = sessions.removeValue(forKey: key) else { return }
+        DiagnosticLog.write("ax", "\(session.info.applicationName) pid=\(key.pid): session torn down (\(session.tracker.snapshots.count) windows)")
         session.observer?.invalidate()
         for id in session.tracker.removeAll() {
             windowIndex[id] = nil
@@ -331,6 +335,7 @@ final class AXWorker {
             let name = session.info.applicationName
             let added = changes.added.count, removed = changes.removed.count, readopted = changes.readopted.count
             Log.ax.notice("\(name, privacy: .public): +\(added) windows, -\(removed), readopted \(readopted)")
+            DiagnosticLog.write("ax", "\(name) pid=\(session.key.pid): +\(added) -\(removed) readopted=\(readopted) tracked=\(session.tracker.snapshots.count)")
         }
         for id in changes.added {
             windowIndex[id] = session.key
@@ -408,6 +413,7 @@ final class AXWorker {
             return
         }
         Log.ax.notice("Accessibility permission lost; pausing discovery")
+        DiagnosticLog.write("ax", "permission treated as revoked; all sessions torn down")
         teardownAllSessions()
         permission = .revoked
         emit(force: true)
@@ -426,6 +432,7 @@ final class AXWorker {
             sessions[key] = session
             let name = session.info.applicationName
             Log.ax.notice("\(name, privacy: .public): window destroyed notification")
+            DiagnosticLog.write("ax", "\(name) pid=\(key.pid): destroyed notification")
             emit()
 
         case AXNotificationName.titleChanged:

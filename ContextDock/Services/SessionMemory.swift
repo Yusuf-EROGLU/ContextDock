@@ -131,6 +131,7 @@ final class SessionMemory {
         let closed = binding.filter { !live.contains($0.key) }
         guard !closed.isEmpty else { return }
         let savedWindows = Dictionary(uniqueKeysWithValues: persistence.state.windows.map { ($0.id, $0) })
+        DiagnosticLog.write("memory", "\(closed.count) remembered window(s) vanished\(isFrozen ? " (frozen: shutdown)" : "")")
         for (windowID, recordID) in closed {
             binding[windowID] = nil
             guard !isFrozen, let record = savedWindows[recordID] else { continue }
@@ -148,6 +149,7 @@ final class SessionMemory {
     private func expireLostRecords(now: Date) {
         let expired = lostAt.filter { now.timeIntervalSince($0.value) > lostGrace }.map(\.key)
         guard !expired.isEmpty else { return }
+        DiagnosticLog.write("memory", "\(expired.count) lost record(s) expired after grace period")
         for id in expired { lostAt[id] = nil }
         pendingWindows.removeAll { expired.contains($0.id) }
         for index in pendingGroups.indices {
@@ -189,6 +191,7 @@ final class SessionMemory {
         guard !candidates.isEmpty else { return }
         let matches = FingerprintMatcher.match(pending: pendingWindows, candidates: candidates)
         guard !matches.isEmpty else { return }
+        DiagnosticLog.write("memory", "re-attached \(matches.count) remembered window(s); \(pendingWindows.count - matches.count) still pending")
 
         for record in pendingWindows {
             guard let windowID = matches[record.id] else { continue }
@@ -211,6 +214,7 @@ final class SessionMemory {
                 }
             } else if members.count >= 2 {
                 store.restoreGroup(id: groupID, name: group.name, badge: group.badge, colorToken: group.colorToken, members: members)
+                DiagnosticLog.write("memory", "restored group with \(members.count) members")
             }
         }
         pendingGroups.removeAll { group in

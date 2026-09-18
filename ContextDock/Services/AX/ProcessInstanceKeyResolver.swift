@@ -3,6 +3,10 @@ import Foundation
 /// Maps running applications to `ProcessInstanceKey`s and detects PID reuse. Pure except for
 /// the injected start-time lookup.
 struct ProcessInstanceKeyResolver {
+    /// Start times may come from the kernel or from `launchDate`; a small drift between the two
+    /// sources must not look like a reused pid.
+    static let startToleranceMs: Int64 = 2_000
+
     struct Resolution: Equatable {
         let key: ProcessInstanceKey
         /// A previous key for the same pid that is now invalid (the pid was reused).
@@ -28,7 +32,7 @@ struct ProcessInstanceKeyResolver {
         var replaced: ProcessInstanceKey?
         if let existing = keysByPid[pid] {
             switch (existing.start, current) {
-            case (.unixMilliseconds(let known), .some(let now)) where known == now:
+            case (.unixMilliseconds(let known), .some(let now)) where abs(known - now) <= Self.startToleranceMs:
                 return Resolution(key: existing, replaced: nil)
             case (.generation, .none):
                 return Resolution(key: existing, replaced: nil)
