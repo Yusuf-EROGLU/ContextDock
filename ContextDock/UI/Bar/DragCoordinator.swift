@@ -67,10 +67,12 @@ final class DragCoordinator {
     }
 
     /// Converts a window-coordinate point to the bar view's top-left coordinate space.
+    /// `NSHostingView` is already flipped (y grows downwards), so no manual flip in that case.
     private func convert(_ point: NSPoint) -> CGPoint {
         guard let contentView else { return CGPoint(x: point.x, y: point.y) }
         let local = contentView.convert(point, from: nil)
-        return CGPoint(x: local.x, y: contentView.bounds.height - local.y)
+        let y = contentView.isFlipped ? local.y : contentView.bounds.height - local.y
+        return CGPoint(x: local.x, y: y)
     }
 
     /// Finds the interaction overlay under the pointer. The leading/trailing thirds of a card

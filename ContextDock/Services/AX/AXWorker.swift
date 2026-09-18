@@ -35,6 +35,10 @@ final class AXWorker {
         var observedAppScanEveryTicks = 4
         /// Trust is re-checked every N ticks while granted (AX errors also reveal revocation).
         var trustCheckEveryTicks = 4
+        /// Consecutive failed trust checks (or apiDisabled errors) before the grant is treated
+        /// as revoked. Right after wake or unlock the check can fail transiently; tearing the
+        /// sessions down on the first failure would drop every card, name and group.
+        var trustFailuresBeforeRevoke = 3
     }
 
     fileprivate struct AppSession {
@@ -73,6 +77,7 @@ final class AXWorker {
     private var showAuxiliaryWindows = false
     private var permission: PermissionState = .unknown
     private var wasEverTrusted = false
+    private var consecutiveTrustFailures = 0
     private var isReconciling = false
     private var tick: UInt64 = 0
     private var lastEmitted: DiscoverySnapshot?
@@ -117,7 +122,8 @@ final class AXWorker {
         let wasPaused = mode == .paused
         mode = newMode
         if wasPaused && newMode != .paused {
-            requestReconcile(after: .seconds(2))
+            // Give apps (and tccd) a moment to finish waking before the first full scan.
+            requestReconcile(after: .seconds(5))
         }
     }
 
@@ -143,8 +149,16 @@ final class AXWorker {
         defer { isReconciling = false }
         tick += 1
 
-        let mustCheckTrust = permission != .granted || tick % UInt64(configuration.trustCheckEveryTicks) == 0
+        let mustCheckTrust = permission != .granted || consecutiveTrustFailures > 0 || tick % UInt64(configuration.trustCheckEveryTicks) == 0
         guard !mustCheckTrust || AXPermission.isTrusted() else {
+            if wasEverTrusted, permission == .granted {
+                // Tolerate a transient failure (wake, unlock); keep everything and check again.
+                consecutiveTrustFailures += 1
+                Log.ax.notice("Accessibility trust check failed (\(self.consecutiveTrustFailures)/\(self.configuration.trustFailuresBeforeRevoke))")
+                if consecutiveTrustFailures < configuration.trustFailuresBeforeRevoke {
+                    return
+                }
+            }
             let state: PermissionState = wasEverTrusted ? .revoked : .denied
             if permission != state || !sessions.isEmpty {
                 teardownAllSessions()
@@ -153,6 +167,7 @@ final class AXWorker {
             }
             return
         }
+        consecutiveTrustFailures = 0
         let regained = permission != .granted
         permission = .granted
         wasEverTrusted = true
@@ -378,7 +393,15 @@ final class AXWorker {
         session.tracker.setFocused(focused)
     }
 
+    /// An AX call answered `apiDisabled`. Like the trust check, this is tolerated a few times
+    /// before the grant is treated as revoked.
     private func permissionLost() {
+        consecutiveTrustFailures += 1
+        guard consecutiveTrustFailures >= configuration.trustFailuresBeforeRevoke else {
+            Log.ax.notice("AX reported apiDisabled (\(self.consecutiveTrustFailures)/\(self.configuration.trustFailuresBeforeRevoke)); keeping sessions")
+            requestReconcile(after: .seconds(2))
+            return
+        }
         Log.ax.notice("Accessibility permission lost; pausing discovery")
         teardownAllSessions()
         permission = .revoked
