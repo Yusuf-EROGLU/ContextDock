@@ -16,7 +16,11 @@ enum DiagnosticLog {
         return formatter
     }()
 
+    /// Tests exercise the same services; they must not write into the user's diagnostics file.
+    private static let isEnabled: Bool = !AppDelegate.isRunningAsTestHost
+
     static func write(_ category: String, _ message: String) {
+        guard isEnabled else { return }
         let line = "\(formatter.string(from: Date())) [\(category)] \(message)\n"
         queue.async {
             let fileManager = FileManager.default

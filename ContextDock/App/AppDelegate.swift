@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// environment variables differ between Xcode versions, so several signals are checked:
     /// XCTest-prefixed variables, the test bundle injection library, and the presence of the
     /// XCTest runtime in the process.
-    static var isRunningAsTestHost: Bool {
+    nonisolated static var isRunningAsTestHost: Bool {
         let env = ProcessInfo.processInfo.environment
         if env.keys.contains(where: { $0.hasPrefix("XCTest") || $0.hasPrefix("SWT_") }) { return true }
         if let inserted = env["DYLD_INSERT_LIBRARIES"], inserted.contains("XCTest") || inserted.contains("Testing") { return true }
