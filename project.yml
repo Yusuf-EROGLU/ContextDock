@@ -31,8 +31,8 @@ targets:
       properties:
         CFBundleName: ContextDock
         CFBundleDisplayName: ContextDock
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.2.0"
+        CFBundleVersion: "2"
         LSMinimumSystemVersion: "14.0"
         LSUIElement: true
         NSAccessibilityUsageDescription: "ContextDock needs Accessibility access to read other apps' window titles and to switch to the window you pick."

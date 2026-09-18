@@ -40,6 +40,8 @@ fi
 # inherits it and Gatekeeper would run the app translocated (and it may never show its bar).
 # This is our own build product, so clearing the flag is legitimate.
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+# ditto keeps the build folder's old timestamp; make Finder's "Date Modified" reflect the install.
+touch "$DEST" "$DEST/Contents" "$DEST/Contents/Info.plist"
 
 echo
 echo "Installed: $DEST"
