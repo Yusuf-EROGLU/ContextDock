@@ -1,13 +1,27 @@
 import Foundation
 import Observation
 
-/// Everything ContextDock persists as JSON (simple preferences live in UserDefaults). Window
-/// names, badges and groups are session-only by design and never stored here.
+/// Everything ContextDock persists as JSON (simple preferences live in UserDefaults):
+/// the shortcut, and the remembered windows/groups that are re-attached after a relaunch.
 struct PersistedState: Codable, Sendable, Equatable {
     static let currentSchemaVersion = 1
 
     var schemaVersion: Int = PersistedState.currentSchemaVersion
     var hotkey: HotkeyConfig?
+    var windows: [PersistedWindow] = []
+    var groups: [PersistedGroup] = []
+
+    enum CodingKeys: String, CodingKey { case schemaVersion, hotkey, windows, groups }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? PersistedState.currentSchemaVersion
+        hotkey = try container.decodeIfPresent(HotkeyConfig.self, forKey: .hotkey)
+        windows = try container.decodeIfPresent([PersistedWindow].self, forKey: .windows) ?? []
+        groups = try container.decodeIfPresent([PersistedGroup].self, forKey: .groups) ?? []
+    }
 }
 
 /// User-visible status of the persistence layer.

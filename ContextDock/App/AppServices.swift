@@ -25,6 +25,7 @@ final class AppServices {
     private(set) lazy var hotkeyModel = HotkeyModel(registrar: hotkeyRegistrar, persistence: persistence)
     private(set) lazy var unityBridge = UnityBridgeMonitor(store: store)
     private(set) lazy var autoHide = AutoHideController(preferences: preferences, barState: barState, panel: panelController.window)
+    private(set) lazy var memory = SessionMemory(store: store, persistence: persistence)
 
     private var snapshotTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
@@ -58,6 +59,7 @@ final class AppServices {
         snapshotTask = Task { @MainActor [weak self] in
             for await snapshot in worker.snapshots {
                 store.apply(snapshot)
+                self?.memory.sync()
                 self?.handlePermissionChange(snapshot.permission)
                 self?.clearStaleHover()
             }
@@ -132,6 +134,7 @@ final class AppServices {
     private func wireStoreCallbacks() {
         store.onItemsChanged = { [unowned self] in
             panelController.relayout()
+            memory.sync()
         }
         store.onWindowsRemoved = { [unowned self] removed in
             let removedItems = Set(removed.map { BarItemID.window($0) })
@@ -168,6 +171,10 @@ final class AppServices {
         ] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main, using: reconcile))
         }
+        // Logout/shutdown closes every app; those windows are not "closed by the user".
+        observers.append(center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.memory.freeze() }
+        })
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
             Task { @AXActor in worker.setMode(.paused) }
         })
@@ -329,6 +336,7 @@ final class AppServices {
         alert.alertStyle = .warning
         if alert.runModal() == .alertFirstButtonReturn {
             store.resetAllCustomizations()
+            memory.forgetEverything()
         }
     }
 }

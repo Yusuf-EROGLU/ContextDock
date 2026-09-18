@@ -80,6 +80,32 @@ struct WindowGroup: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
+/// What ContextDock remembers about a window across launches. Windows have no durable
+/// identity, so this is a best-effort description used to re-attach names and groups.
+struct WindowFingerprint: Sendable, Hashable, Codable {
+    var bundleIdentifier: String?
+    var applicationName: String
+    var title: String?
+    var pid: pid_t?
+    var processStartUnixMs: Int64?
+}
+
+/// A remembered window: its fingerprint plus the customization to restore.
+struct PersistedWindow: Sendable, Hashable, Codable, Identifiable {
+    var id: UUID
+    var fingerprint: WindowFingerprint
+    var customization: SessionCustomization
+}
+
+/// A remembered group; `members` are `PersistedWindow` ids in raise order.
+struct PersistedGroup: Sendable, Hashable, Codable, Identifiable {
+    var id: UUID
+    var name: String?
+    var badge: Badge?
+    var colorToken: ColorToken?
+    var members: [UUID]
+}
+
 /// An item shown in the bar: a single window card or a group card.
 enum BarItemID: Hashable, Sendable, Codable {
     case window(WindowSessionID)

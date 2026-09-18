@@ -5,10 +5,12 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 
 ## Window discovery and identity
 
-- **Session-only names and groups.** Names, badges, colors, groups and manual card order live in
-  memory for this ContextDock run and die with the window or the app. Nothing is restored after a
-  relaunch, and title similarity is never used to guess a window's identity. *(by design, chosen by
-  the user on 2026-09-16 over a "remember and re-match" mode)*
+- **Restored names and groups are a best-effort match.** Since 2026-09-18 names, badges and
+  groups are persisted and re-attached after a relaunch by process instance + title, app + title,
+  "only window of that app", then app order. Terminals whose titles change and apps with several
+  similar windows can be matched to the wrong window; the fix is to drag the card out or rename it.
+  Manual card order is not persisted. Unmatched records are dropped 15 minutes after launch.
+  *(the user chose this over session-only behaviour on 2026-09-18)*
 - **Group open is sequential.** Opening a group raises members one by one through the target apps'
   activation; with many members this takes a few hundred milliseconds and macOS may decline an
   activation. The focus target is verified; the other members are raised best effort. *(verify)*

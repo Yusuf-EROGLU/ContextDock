@@ -95,9 +95,13 @@ scripts pick that identity up automatically; `CODE_SIGN_IDENTITY` overrides it.
   *Badge & Color…*, *Ungroup*.
 - **Right click on a window card**: *Rename…*, *Badge & Color…*, *Add to Group* / *Remove from
   Group*, *Reset Customization*, *Details…*.
-- **Session scope**: names, badges, colors, groups and card order live as long as the windows and
-  ContextDock run. Window identities cannot be restored reliably after a relaunch, so nothing is
-  guessed back from titles.
+- **Remembered across launches**: names, badges, colors and groups are saved and re-attached
+  after ContextDock or the Mac restarts. Windows have no durable identity, so the match is best
+  effort: same process and title first, then same app and title, then the only window of that app,
+  then remaining windows of that app in order (within 15 minutes of launch). A group breaks only
+  when you ungroup it or one of its windows is closed while ContextDock is running; logout and
+  shutdown are recognized and do not count as closing. A wrongly re-attached card can simply be
+  dragged out of its group or renamed.
 - **Search**: `Control + Option + Space` (changeable in Settings, with conflict detection) or
   *Search Windows…* in the menu. Type to filter by name, app, title or group; arrows move, Return
   switches (a group entry opens the whole group), Escape closes, `⌘1`–`⌘9` jump to the first nine

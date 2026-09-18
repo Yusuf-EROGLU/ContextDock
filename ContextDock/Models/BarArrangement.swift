@@ -134,6 +134,19 @@ struct BarArrangement: Sendable, Hashable {
         order.replaceSubrange(index...index, with: group.members.map { BarItemID.window($0) })
     }
 
+    /// Re-creates a remembered group with a known id. Members are pulled out of wherever they
+    /// are; the group takes the slot of the first member. Requires at least two members.
+    mutating func restoreGroup(id: GroupID, name: String?, badge: Badge?, colorToken: ColorToken?, members: [WindowSessionID]) {
+        let live = members.filter { allWindowIDs.contains($0) }
+        guard live.count >= 2, groups[id] == nil else { return }
+        let anchorIndex = order.firstIndex(of: .window(live[0])) ?? order.count
+        for window in live { detach(window) }
+        let group = WindowGroup(id: id, name: name, badge: badge, colorToken: colorToken, members: live)
+        groups[id] = group
+        order.insert(.group(id), at: min(anchorIndex, order.count))
+        dissolveSmallGroups()
+    }
+
     mutating func update(_ id: GroupID, _ mutate: (inout WindowGroup) -> Void) {
         guard var group = groups[id] else { return }
         mutate(&group)

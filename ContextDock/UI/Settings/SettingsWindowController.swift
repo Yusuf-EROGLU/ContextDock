@@ -66,7 +66,7 @@ struct SettingsView: View {
             }
             Section("Windows") {
                 Toggle("Show auxiliary windows (dialogs, floating tool windows)", isOn: $preferences.showAuxiliaryWindows)
-                Text("Drag a card onto another to group them; click a group to bring all of its windows forward. Names and groups last for this ContextDock session.")
+                Text("Drag a card onto another to group them; click a group to bring all of its windows forward. Names, badges and groups are remembered across launches and re-attached by app and window title; a group breaks only when you ungroup it or one of its windows is closed while ContextDock is running.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Advanced") {

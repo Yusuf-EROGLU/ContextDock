@@ -23,7 +23,7 @@ person at the Mac, usually because the Accessibility grant is a user action).
 ```bash
 scripts/build.sh            # Debug build — PASS (BUILD SUCCEEDED, no warnings)
 scripts/build.sh Release    # PASS (BUILD SUCCEEDED; ad-hoc signature, identifier com.yusuferoglu.ContextDock)
-scripts/test.sh             # PASS — 71 tests in 14 suites, 0 failures (~0.1 s) after the grouping pivot
+scripts/test.sh             # PASS — 78 tests in 16 suites, 0 failures (~0.1 s) after the grouping pivot
 ```
 
 Unity bridge compile check (not part of the Xcode build):
@@ -37,7 +37,7 @@ Unity bridge compile check (not part of the Xcode build):
 zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC and ünïcode encoded as expected
 ```
 
-## Automated tests (71, all PASS)
+## Automated tests (78, all PASS)
 
 | Suite | Covers |
 |---|---|
@@ -52,6 +52,7 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | JSONStore (6) | hotkey round trip + atomic write, missing, corrupt preserved with defaults, newer schema read-only and untouched, service read-only/corrupt modes |
 | SearchMatcher (4) | bar order on empty query, weighting + diacritics, subsequence fallback, multi-term |
 | HotkeyConfig (3) | default ⌃⌥Space, Codable round trip + display, modifier requirement |
+| FingerprintMatcher + SessionMemory (7) | title/process-instance/single-window/order matching, no double use; save → relaunch → restore of names and a group with changed terminal titles; closing a member drops it while shutdown (frozen) keeps it; restore window expiry |
 | BarArrangement (9) | first-seen order and removal, stack creates/extends groups in place, no-op stacking, dissolve at one member, remove-from-group and ungroup placement, move/reorder pulls out of groups, group merge, group onto window, focus target |
 | Unity bridge matching (5) | pid + start tolerance, PID reuse ignored, stale flag, newest report wins, parser/size/purge rules |
 
@@ -72,7 +73,7 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | A11 | Detached HEAD / no commits | N/A | Removed with the Git feature. |
 | A12 | Unicode + space paths | N/A | No paths are processed any more (bridge project path is display-only). |
 | A13 | Git missing / folder deleted / no access | N/A | Removed with the Git feature. |
-| A14 | ContextDock relaunched | **PASS** (partial) | Relaunched many times during the session: bar, permission and windows come back; names/groups intentionally do not. Custom shortcut persistence covered by the JSONStore round-trip test, not yet exercised by hand. |
+| A14 | ContextDock relaunched | **PASS** (partial) | Bar, permission and windows come back. Since 2026-09-18 names, badges and groups are persisted and re-attached by fingerprint (automated round-trip test); real relaunch/reboot check by the user pending. |
 | A15 | Other Space / full screen / Stage Manager | NOT_RUN | Best effort; record real behaviour here. |
 | A16 | External display removed | NOT_RUN | Relayout on `didChangeScreenParametersNotification` with fallback to the first screen. |
 | A17 | AX or Git unresponsive | NOT_RUN (manual) | Automated: stale handling, runner timeout/cap tests. AX calls have 1 s messaging timeouts off the main thread. |

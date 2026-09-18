@@ -109,6 +109,17 @@ final class WindowStore {
         rebuild()
     }
 
+    func restoreGroup(id: GroupID, name: String?, badge: Badge?, colorToken: ColorToken?, members: [WindowSessionID]) {
+        arrangement.restoreGroup(id: id, name: name, badge: badge, colorToken: colorToken, members: members)
+        rebuild()
+    }
+
+    /// Applies a remembered customization without triggering separate rebuilds per field.
+    func applyCustomization(_ customization: SessionCustomization, to id: WindowSessionID) {
+        customizations.update(id) { $0 = customization }
+        rebuild()
+    }
+
     func renameGroup(_ id: GroupID, to name: String?) {
         arrangement.update(id) { $0.name = name?.isEmpty == true ? nil : name }
         rebuild()
