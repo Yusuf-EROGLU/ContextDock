@@ -75,46 +75,78 @@ final class DragCoordinator {
         return CGPoint(x: local.x, y: y)
     }
 
-    /// Finds the interaction overlay under the pointer. The leading/trailing thirds of a card
-    /// (left/right, or top/bottom on a vertical bar) mean "insert before/after"; the middle
-    /// third means "stack onto".
+    /// Fraction of a card (along the layout axis) that counts as "stack onto"; the rest of the
+    /// card, split in two, means "insert before/after".
+    private let stackZone: ClosedRange<CGFloat> = 0.2...0.8
+
+    /// Finds the card under the pointer by geometry rather than AppKit hit-testing, so SwiftUI's
+    /// own drawing views and member-icon layers cannot swallow the hit. The leading/trailing
+    /// slices of a card (left/right, or top/bottom on a vertical bar) mean "insert before/after";
+    /// the middle means "stack onto".
     private func dropTarget(at windowPoint: NSPoint) -> BarState.DropTarget? {
         guard let contentView, let origin else { return nil }
         let local = contentView.convert(windowPoint, from: nil)
         guard contentView.bounds.insetBy(dx: -40, dy: -60).contains(local) else {
             return fromGroup != nil ? .detach : nil
         }
-        var view = contentView.hitTest(local)
-        while let current = view, !(current is CardInteractionView.InteractionNSView) {
-            view = current.superview
+
+        let overlays = interactionViews(in: contentView)
+        // Item layers cover whole cards; member layers sit inside group cards and resolve to
+        // their group. Prefer an item layer when both contain the point.
+        var hovered: BarItemID?
+        var frame: NSRect?
+        for view in overlays {
+            guard let target = view.target, let window = view.window else { continue }
+            let rect = view.convert(view.bounds, to: nil)
+            guard rect.contains(windowPoint) else { continue }
+            switch target {
+            case .item(let id):
+                hovered = id
+                frame = rect
+            case .member(_, let group):
+                if hovered == nil {
+                    hovered = .group(group)
+                    frame = itemFrame(for: .group(group), in: overlays) ?? rect
+                }
+            }
+            _ = window
         }
-        guard let overlay = view as? CardInteractionView.InteractionNSView, let target = overlay.target else {
+        guard let hovered, let frame else {
             return fromGroup != nil ? .detach : .insert(before: nil)
-        }
-        let hovered: BarItemID
-        switch target {
-        case .item(let id): hovered = id
-        case .member(_, let group): hovered = .group(group)
         }
         if hovered == origin { return nil }
         if case .group(let group) = hovered, fromGroup == group { return nil }
 
-        let point = overlay.convert(windowPoint, from: nil)
         // Fraction along the layout direction, 0 = leading (left, or top on a vertical bar).
         let fraction: CGFloat
         if isVertical() {
-            // AppKit y grows upwards; the first card is at the top.
-            fraction = overlay.isFlipped ? point.y / overlay.bounds.height : 1 - point.y / overlay.bounds.height
+            fraction = (frame.maxY - windowPoint.y) / max(frame.height, 1)
         } else {
-            fraction = point.x / overlay.bounds.width
+            fraction = (windowPoint.x - frame.minX) / max(frame.width, 1)
         }
-        if fraction < 0.3 {
+        if fraction < stackZone.lowerBound {
             return .insert(before: hovered)
         }
-        if fraction > 0.7 {
+        if fraction > stackZone.upperBound {
             return .insert(before: itemAfter(hovered))
         }
         return .stack(hovered)
+    }
+
+    private func interactionViews(in root: NSView) -> [CardInteractionView.InteractionNSView] {
+        var result: [CardInteractionView.InteractionNSView] = []
+        func walk(_ view: NSView) {
+            if let interaction = view as? CardInteractionView.InteractionNSView, !interaction.isHiddenOrHasHiddenAncestor {
+                result.append(interaction)
+            }
+            for child in view.subviews { walk(child) }
+        }
+        walk(root)
+        return result
+    }
+
+    private func itemFrame(for id: BarItemID, in overlays: [CardInteractionView.InteractionNSView]) -> NSRect? {
+        overlays.first { $0.target == .item(id) }.map { $0.convert($0.bounds, to: nil) }
     }
 
     private func itemAfter(_ id: BarItemID) -> BarItemID? {
