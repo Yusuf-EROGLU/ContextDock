@@ -68,6 +68,33 @@ struct CardInteractionView: NSViewRepresentable {
         override var acceptsFirstResponder: Bool { false }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+        /// A group card's layer lies on top of its member-icon layers. Points inside a member
+        /// icon are handed to that layer so icons stay clickable and draggable individually.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let hit = super.hitTest(point), hit === self else { return super.hitTest(point) }
+            guard case .item(.group(let group)) = target, let superview, let root = window?.contentView else { return hit }
+            let windowPoint = superview.convert(point, to: nil)
+            if let member = Self.memberLayer(of: group, containing: windowPoint, under: root) {
+                return member
+            }
+            return hit
+        }
+
+        private static func memberLayer(of group: GroupID, containing windowPoint: NSPoint, under root: NSView) -> InteractionNSView? {
+            var found: InteractionNSView?
+            func walk(_ view: NSView) {
+                if found != nil { return }
+                if let layer = view as? InteractionNSView, case .member(_, let owner) = layer.target, owner == group,
+                   !layer.isHiddenOrHasHiddenAncestor, layer.convert(layer.bounds, to: nil).contains(windowPoint) {
+                    found = layer
+                    return
+                }
+                for child in view.subviews { walk(child) }
+            }
+            walk(root)
+            return found
+        }
+
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             if let trackingArea { removeTrackingArea(trackingArea) }
