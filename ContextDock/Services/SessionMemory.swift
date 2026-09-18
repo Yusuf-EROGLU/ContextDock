@@ -67,7 +67,7 @@ final class SessionMemory {
     var restoreWindow: TimeInterval = 15 * 60
     /// How long a window that vanished while running may come back (apps re-creating their
     /// windows after sleep, a quick relaunch) before its record is treated as closed for good.
-    var lostGrace: TimeInterval = 120
+    var lostGrace: TimeInterval = 10 * 60
 
     private let store: WindowStore
     private let persistence: PersistenceService
@@ -80,6 +80,8 @@ final class SessionMemory {
     private var pendingWindows: [PersistedWindow]
     private var pendingGroups: [PersistedGroup]
     private var lostAt: [UUID: Date] = [:]
+    /// While discovery is paused (display sleep, lock screen) the grace clock stands still.
+    private var suspendedAt: Date?
     /// Set during logout/shutdown: windows vanish because the session ends, not because the
     /// user closed them, so their records must survive.
     private(set) var isFrozen = false
@@ -94,6 +96,17 @@ final class SessionMemory {
 
     func freeze() {
         isFrozen = true
+    }
+
+    func suspend() {
+        if suspendedAt == nil { suspendedAt = Date() }
+    }
+
+    func resume() {
+        guard let suspendedAt else { return }
+        let elapsed = Date().timeIntervalSince(suspendedAt)
+        self.suspendedAt = nil
+        for (id, date) in lostAt { lostAt[id] = date.addingTimeInterval(elapsed) }
     }
 
     var pendingCount: Int { pendingWindows.count }
@@ -147,6 +160,7 @@ final class SessionMemory {
 
     /// Drops lost records whose grace period ended.
     private func expireLostRecords(now: Date) {
+        guard suspendedAt == nil else { return }
         let expired = lostAt.filter { now.timeIntervalSince($0.value) > lostGrace }.map(\.key)
         guard !expired.isEmpty else { return }
         DiagnosticLog.write("memory", "\(expired.count) lost record(s) expired after grace period")

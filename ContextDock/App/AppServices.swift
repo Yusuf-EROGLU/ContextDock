@@ -86,6 +86,7 @@ final class AppServices {
         for observer in observers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             NotificationCenter.default.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
         persistence.flush()
         let worker = self.worker
@@ -177,25 +178,40 @@ final class AppServices {
         observers.append(center.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.memory.freeze() }
         })
-        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
+        observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "system will sleep")
-            Task { @AXActor in worker.setMode(.paused) }
+            Task { @MainActor in self?.suspendDiscovery() }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "system did wake")
-            Task { @MainActor in self?.applyWorkerMode() }
+            Task { @MainActor in self?.resumeDiscovery() }
         })
-        observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { _ in
+        // Display sleep and the lock screen make macOS report no windows for any app; pausing
+        // discovery keeps cards, names and groups intact until the screen is back.
+        observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screens did sleep")
+            Task { @MainActor in self?.suspendDiscovery() }
         })
-        observers.append(center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { _ in
+        observers.append(center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screens did wake")
+            Task { @MainActor in self?.resumeDiscovery() }
         })
-        observers.append(center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { _ in
-            Task { @AXActor in worker.setMode(.paused) }
+        let distributed = DistributedNotificationCenter.default()
+        observers.append(distributed.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+            DiagnosticLog.write("app", "screen locked")
+            Task { @MainActor in self?.suspendDiscovery() }
+        })
+        observers.append(distributed.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            DiagnosticLog.write("app", "screen unlocked")
+            Task { @MainActor in self?.resumeDiscovery() }
+        })
+        observers.append(center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            DiagnosticLog.write("app", "session resigned active")
+            Task { @MainActor in self?.suspendDiscovery() }
         })
         observers.append(center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.applyWorkerMode() }
+            DiagnosticLog.write("app", "session became active")
+            Task { @MainActor in self?.resumeDiscovery() }
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -230,6 +246,18 @@ final class AppServices {
             let worker = self.worker
             Task { @AXActor in worker.setShowAuxiliaryWindows(show) }
         }
+    }
+
+    /// Stops scanning and freezes the memory's grace clock (sleep, display sleep, lock screen).
+    private func suspendDiscovery() {
+        let worker = self.worker
+        Task { @AXActor in worker.setMode(.paused) }
+        memory.suspend()
+    }
+
+    private func resumeDiscovery() {
+        memory.resume()
+        applyWorkerMode()
     }
 
     private func applyWorkerMode() {

@@ -193,3 +193,36 @@ struct WindowTrackerReadoptionTests {
         #expect(changes.added.count == 2)
     }
 }
+
+@Suite("WindowTracker empty list")
+struct WindowTrackerEmptyListTests {
+    @Test("a sudden empty window list keeps the windows and marks them stale")
+    func emptyListIsUnreliable() {
+        var tracker = WindowTracker<IntElement>(process: .test())
+        let seq = SequenceCounter()
+        _ = tracker.apply(.success([(IntElement(id: 1), .window("A")), (IntElement(id: 2), .window("B"))]), nextSequence: seq.next, probe: { _ in .alive })
+        let ids = tracker.snapshots.map(\.id)
+
+        // Lock screen: the app lists nothing and the old elements even probe dead.
+        for _ in 0..<3 {
+            let changes = tracker.apply(.success([]), nextSequence: seq.next, probe: { _ in .dead })
+            #expect(changes.removed.isEmpty)
+        }
+        #expect(tracker.snapshots.map(\.id) == ids)
+        #expect(tracker.snapshots.allSatisfy { $0.isStale })
+
+        // Screen back: the same elements are listed again.
+        let changes = tracker.apply(.success([(IntElement(id: 1), .window("A")), (IntElement(id: 2), .window("B"))]), nextSequence: seq.next, probe: { _ in .alive })
+        #expect(changes == WindowTracker<IntElement>.Changes())
+        #expect(tracker.snapshots.allSatisfy { !$0.isStale })
+    }
+
+    @Test("an empty list for a process that never had windows is a normal scan")
+    func emptyForNewProcess() {
+        var tracker = WindowTracker<IntElement>(process: .test())
+        let seq = SequenceCounter()
+        let changes = tracker.apply(.success([]), nextSequence: seq.next, probe: { _ in .alive })
+        #expect(changes == WindowTracker<IntElement>.Changes())
+        #expect(tracker.snapshots.isEmpty)
+    }
+}

@@ -23,7 +23,7 @@ person at the Mac, usually because the Accessibility grant is a user action).
 ```bash
 scripts/build.sh            # Debug build — PASS (BUILD SUCCEEDED, no warnings)
 scripts/build.sh Release    # PASS (BUILD SUCCEEDED; ad-hoc signature, identifier com.yusuferoglu.ContextDock)
-scripts/test.sh             # PASS — 81 tests in 17 suites, 0 failures (~0.1 s) after the grouping pivot
+scripts/test.sh             # PASS — 83 tests in 18 suites, 0 failures (~0.1 s) after the grouping pivot
 ```
 
 Unity bridge compile check (not part of the Xcode build):
@@ -37,7 +37,7 @@ Unity bridge compile check (not part of the Xcode build):
 zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC and ünïcode encoded as expected
 ```
 
-## Automated tests (81, all PASS)
+## Automated tests (83, all PASS)
 
 | Suite | Covers |
 |---|---|
@@ -91,7 +91,8 @@ zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC a
 | P02 | Auto-hide handle: collapses after the delay, expands on click/hover, count shown | **PASS** (collapse) | 2026-09-17: after launch with the pointer away, the panel shrank to the 48×22 handle at the bottom center within the 5 s delay (CG window list). Click/hover expansion and the Settings delay slider: user check pending. |
 | B01 | Groups lost after overnight sleep (reported 2026-09-18) | FIXED, verify | Likely cause: a transient "not trusted" answer from the Accessibility check right after wake tore down every session (cards, names, groups). Now three consecutive failures are required before the grant counts as revoked, `apiDisabled` errors are tolerated the same way, and the first scan after wake waits 5 s. Needs an overnight sleep to confirm. |
 | B02 | Drag ghost moved opposite to the pointer vertically | **PASS** | The hosting view is already flipped; the extra y flip was removed (commit on 2026-09-18). |
-| B03 | Groups dissolved after a lunch break (reported 2026-09-18, process had not restarted, no trust failure logged) | FIXED, verify | Working theory: some apps hand out new AX elements for their windows after sleep/lock, so the old element probed dead and the window was treated as closed. Now the tracker re-adopts a dead element's session id when exactly one new element with the same title appears in that process, and the memory keeps a vanished member's record and group for 2 minutes so a re-created window rejoins with its name. Window add/remove/readopt counts are logged per app (`log show --predicate 'subsystem == "com.yusuferoglu.ContextDock"'`) to confirm the cause next time. |
+| B04 | Groups dissolved after display sleep (diagnostics 2026-09-18 14:02) | FIXED, verify | Root cause from `diagnostics.log`: on display sleep/lock the system is not asleep, so scanning continued; macOS reports an empty window list for every app and the old elements probe dead, so all 17 windows were removed within 10 s and the memory grace (2 min) expired during the 3.5 min sleep. Fixes: discovery pauses on display sleep, screen lock and session switch (resumes on wake/unlock); a sudden empty list for a process that had windows is treated as an unreliable scan (stale, no removal); the memory grace clock freezes while paused and is 10 min. |
+| B03 | Groups dissolved after a lunch break (reported 2026-09-18, process had not restarted, no trust failure logged) | superseded by B04 | Working theory: some apps hand out new AX elements for their windows after sleep/lock, so the old element probed dead and the window was treated as closed. Now the tracker re-adopts a dead element's session id when exactly one new element with the same title appears in that process, and the memory keeps a vanished member's record and group for 2 minutes so a re-created window rejoins with its name. Window add/remove/readopt counts are logged per app (`log show --predicate 'subsystem == "com.yusuferoglu.ContextDock"'`) to confirm the cause next time. |
 | M1 gate | Two Unity + two Ghostty windows: name each, switch to the right one | **PASS** | Reported by the user on 2026-09-16 after granting Accessibility to the `ContextDock Dev`-signed build. |
 
 ### How to test grouping (G01–G04)

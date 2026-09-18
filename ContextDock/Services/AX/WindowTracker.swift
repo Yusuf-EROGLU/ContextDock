@@ -69,6 +69,13 @@ struct WindowTracker<Element: ElementIdentity> {
         case .failure:
             markAllStale()
 
+        case .success(let fresh) where fresh.isEmpty && !windows.isEmpty:
+            // The lock screen (and some apps while suspended) report no windows at all although
+            // the windows still exist. Treat it like a failed scan: keep everything, mark stale.
+            // Real closes arrive as destroyed notifications or as dead probes once the app lists
+            // windows again.
+            markAllStale()
+
         case .success(let fresh):
             let tracked = windows.values
                 .sorted { $0.snapshot.firstSeenSequence < $1.snapshot.firstSeenSequence }
