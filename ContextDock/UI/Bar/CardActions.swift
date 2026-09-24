@@ -121,7 +121,7 @@ final class CardActions: NSObject {
         editingItem = .window(id)
         let view = RenameView(
             heading: "Rename “\(card.rawTitle ?? card.applicationName)”",
-            hint: "The name lives while this window and ContextDock are open.",
+            hint: "Remembered across launches and re-attached to this window by app and title. Cleared with Reset Customization or when the window is closed.",
             name: store.customizations[id]?.name ?? "",
             onSave: { [weak self] name in
                 let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,7 +189,7 @@ final class CardActions: NSObject {
         editingItem = .group(id)
         let view = RenameView(
             heading: "Rename group “\(group.title)”",
-            hint: "Groups last for this ContextDock session.",
+            hint: "Remembered across launches. The group breaks only when you ungroup it or one of its windows is closed while ContextDock is running.",
             name: store.group(id)?.name ?? "",
             onSave: { [weak self] name in
                 let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

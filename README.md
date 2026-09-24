@@ -126,7 +126,7 @@ Both are optional, documented in their own READMEs, and never installed automati
   (versioned JSON, written atomically; a corrupt file is preserved as `state.json.corrupt-<timestamp>`;
   a file from a newer version is never overwritten). Simple preferences use `UserDefaults`.
 - Unity bridge heartbeats: `~/Library/Application Support/ContextDock/Bridge/Unity/`.
-- Session names, badges and groups live in memory and are gone when the window closes or ContextDock quits.
+- Names, badges and groups are remembered in `state.json` and re-attached after a relaunch (see *Remembered across launches*); a record is dropped when its window is closed while ContextDock is running or when you reset the customization.
 - Only window titles and metadata are read, never window contents, terminal output or
   keystrokes. Logs hide titles and paths unless *Verbose debug logging* is on. No telemetry.
 - ContextDock runs no subprocesses and reads no files outside its own support directory.
@@ -157,6 +157,6 @@ Remove the Unity/Ghostty integration files if you installed them.
 | App launches but shows no bar or menu item, `ps` shows an `AppTranslocation` path | The project files carried `com.apple.quarantine` (copied via AirDrop/Downloads) and the build inherited it. Run `xattr -dr com.apple.quarantine .` in the repo once and reinstall; `scripts/install-local.sh` now clears the flag on the installed app. |
 | A drag does not start | Move at least 5 pt before releasing; a short press is a click. Drop on the middle of a card to group, on its edge to reorder. |
 | Shortcut does not work | Settings shows a conflict message if another app owns it; pick another combination. The menu item always works. |
-| Names or groups disappear after relaunch | Names, badges and groups are session-only by design; window identities cannot be restored safely across launches. |
+| Names or groups did not come back after relaunch | Re-attaching is best effort (same process and title, then same app and title, then the only window of that app, then app order) within 15 minutes of launch. A window that opened later or whose app has several look-alike windows may not be matched; rename or regroup it once and it is remembered again. |
 
 See `KNOWN_LIMITATIONS.md` and `TEST_REPORT.md` for verified behaviour and open limitations.
