@@ -4,6 +4,28 @@ import Testing
 
 @Suite("JSONStore", .serialized)
 struct JSONStoreTests {
+    private final class LockedValues: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [UInt32] = []
+
+        func append(_ value: UInt32) { lock.withLock { storage.append(value) } }
+        var values: [UInt32] { lock.withLock { storage } }
+    }
+
+    private final class LockedCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+
+        func increment() -> Int {
+            lock.withLock {
+                value += 1
+                return value
+            }
+        }
+    }
+
+    private enum StubError: Error { case failed }
+
     private func temporaryFile() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("cdock-store-\(UUID().uuidString)", isDirectory: true)
@@ -84,5 +106,44 @@ struct JSONStoreTests {
         #expect(service.state == PersistedState())
         if case .corruptFilePreserved = service.status {} else { Issue.record("expected corrupt status") }
         #expect(!service.isReadOnly)
+    }
+
+    @Test("writer serializes queued saves and flushes the newest value last")
+    func serializedWriter() throws {
+        let written = LockedValues()
+        let writer = PersistenceWriter<PersistedState> { state in
+            if state.hotkey?.keyCode == 1 { Thread.sleep(forTimeInterval: 0.02) }
+            written.append(state.hotkey?.keyCode ?? 0)
+        }
+        func state(_ keyCode: UInt32) -> PersistedState {
+            var value = PersistedState()
+            value.hotkey = HotkeyConfig(keyCode: keyCode, carbonModifiers: HotkeyConfig.commandKeyBit)
+            return value
+        }
+
+        writer.save(state(1), revision: 1) { _ in }
+        writer.save(state(2), revision: 2) { _ in }
+        try writer.flush(state(3))
+
+        #expect(written.values == [1, 2, 3])
+    }
+
+    @Test("flush result wins over a delayed completion for the same revision")
+    @MainActor func flushSupersedesDelayedCompletion() async throws {
+        let attempts = LockedCounter()
+        let writer = PersistenceWriter<PersistedState> { _ in
+            if attempts.increment() == 1 {
+                Thread.sleep(forTimeInterval: 0.05)
+                throw StubError.failed
+            }
+        }
+        let service = PersistenceService(fileURL: temporaryFile(), writer: writer)
+        service.update { $0.hotkey = .default }
+
+        try await Task.sleep(for: .milliseconds(310))
+        service.flush()
+        await Task.yield()
+
+        #expect(service.status == .ok)
     }
 }
