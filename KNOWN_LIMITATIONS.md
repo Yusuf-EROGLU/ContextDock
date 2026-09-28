@@ -89,6 +89,7 @@ the specification; items marked *verify* need confirmation on a real Mac (see `T
 - Ad-hoc signing means a rebuilt binary may need the Accessibility grant re-enabled. See README
   for the self-signed identity workaround. TCC is never reset or bypassed.
 - App Sandbox is off (required for the Accessibility API).
+- Hardened Runtime is enabled for Release builds.
 - **Quarantined sources.** If the repository is copied with `com.apple.quarantine` set (AirDrop,
   browser download), the built app inherits the flag, Gatekeeper runs it translocated and it may
   show no UI. `scripts/install-local.sh` strips the flag from the installed copy; strip it from

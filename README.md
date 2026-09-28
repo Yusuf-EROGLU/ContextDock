@@ -136,6 +136,7 @@ Both are optional, documented in their own READMEs, and never installed automati
 - App Sandbox is **off** for this first release because the Accessibility API does not work from
   a sandboxed app. This is not a way around TCC: the user
   must still grant Accessibility access explicitly.
+- Release builds use Hardened Runtime; the app remains unsandboxed only for Accessibility access.
 - Required permission: Accessibility only. No screen recording, full disk access, Automation,
   input monitoring or root.
 - The global shortcut uses Carbon `RegisterEventHotKey`, which delivers only the registered

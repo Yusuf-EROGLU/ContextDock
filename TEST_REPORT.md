@@ -22,8 +22,8 @@ person at the Mac, usually because the Accessibility grant is a user action).
 
 ```bash
 scripts/build.sh            # Debug build — PASS (BUILD SUCCEEDED, no warnings)
-scripts/build.sh Release    # PASS (BUILD SUCCEEDED; ad-hoc signature, identifier com.yusuferoglu.ContextDock)
-scripts/test.sh             # PASS — 83 tests in 18 suites, 0 failures (~0.1 s) after the grouping pivot
+scripts/build.sh Release    # PASS (universal arm64/x86_64, Hardened Runtime, ContextDock Dev signature)
+scripts/test.sh             # PASS — 89 tests in 20 suites, 0 failures
 ```
 
 Unity bridge compile check (not part of the Xcode build):
@@ -37,24 +37,29 @@ Unity bridge compile check (not part of the Xcode build):
 zsh -n Integrations/Ghostty/contextdock.zsh   # PASS; label with '|', '=', ESC and ünïcode encoded as expected
 ```
 
-## Automated tests (83, all PASS)
+## Automated tests (89, all PASS)
 
 | Suite | Covers |
 |---|---|
 | WindowTracker identity (8) | stable ids across scans and listing order, title change keeps id/sequence, identical titles stay distinct, failed scan → stale not removed, removal only after 2 missed scans + dead probe, not-responding probe keeps window, first-seen order, focus flag |
+| WindowTracker re-adoption/empty-list handling (4) | same-title and ordered re-adoption, ambiguity rejection, sudden empty lists retained, new empty processes accepted |
+| AX observation registry (1) | retired token ids make delayed callbacks inert |
 | ProcessInstanceKeyResolver (5) | same start → same key, PID reuse → new key + replaced report, generation fallback, launchDate fallback, real kernel start time readable |
 | WindowFilter (5) | standard/missing/unknown subrole included, dialogs auxiliary, non-window roles excluded, matcher claims each element once |
 | CardPresenter (6) | label priority (name > structured label > project > title), untitled label, stale subtitle, badge/color, group title/subtitle, accessibility label |
 | ContextResolver (2) | bridge > structured title > plain title, stale bridge |
 | PathNormalizer and ContextKey (3) | trailing slash, NFC/NFD equality, symlink resolution, kind mismatch |
 | StructuredTitleParser (4) | fields, version gate, control chars/oversize rejection, unknown keys |
-| FocusService (7) | exact step order, unhide→unminimize→activate order, dead target refused, exactly one retry, abort on user switch, unverified fallback, raise failure |
-| JSONStore (6) | hotkey round trip + atomic write, missing, corrupt preserved with defaults, newer schema read-only and untouched, service read-only/corrupt modes |
+| FocusService (9) | exact step order, unhide→unminimize→activate order, dead target refused, exactly one retry, abort on user switch, unverified fallback, raise failure, slow activation and main-window confirmation |
+| JSONStore and persistence writer (8) | atomic round trip, missing/corrupt/newer-schema handling, service modes, serialized writes, flush completion ordering |
 | SearchMatcher (4) | bar order on empty query, weighting + diacritics, subsequence fallback, multi-term |
 | HotkeyConfig (3) | default ⌃⌥Space, Codable round trip + display, modifier requirement |
-| FingerprintMatcher + SessionMemory (7) | title/process-instance/single-window/order matching, no double use; save → relaunch → restore of names and a group with changed terminal titles; closing a member drops it while shutdown (frozen) keeps it; restore window expiry |
+| FingerprintMatcher (4) | title/process-instance/single-window/order matching and no double use |
+| SessionMemory (4) | save → relaunch → restore, close versus shutdown, grace-period recreation, restore-window expiry |
 | BarArrangement (9) | first-seen order and removal, stack creates/extends groups in place, no-op stacking, dissolve at one member, remove-from-group and ungroup placement, move/reorder pulls out of groups, group merge, group onto window, focus target |
 | Unity bridge matching (5) | pid + start tolerance, PID reuse ignored, stale flag, newest report wins, parser/size/purge rules |
+| AutoHidePolicy (2) | delay and collapse blockers |
+| Discovery suspension (3) | overlapping reasons, duplicate notifications, unrelated resumes |
 
 ## Manual acceptance matrix (spec §15.2)
 

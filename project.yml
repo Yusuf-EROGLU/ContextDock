@@ -15,7 +15,6 @@ settings:
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
     ENABLE_APP_SANDBOX: "NO"
-    ENABLE_HARDENED_RUNTIME: "NO"
     SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
     DEAD_CODE_STRIPPING: "YES"
     ENABLE_USER_SCRIPT_SANDBOXING: "YES"
@@ -45,6 +44,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: "YES"
         GENERATE_INFOPLIST_FILE: "NO"
+      configs:
+        Release:
+          ENABLE_HARDENED_RUNTIME: "YES"
   ContextDockTests:
     type: bundle.unit-test
     platform: macOS
