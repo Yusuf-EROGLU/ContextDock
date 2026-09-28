@@ -54,6 +54,10 @@ enum AXObservationRegistry {
         guard let token = tokens[id] else { return }
         token.worker.handle(notification: notification, token: token)
     }
+
+#if DEBUG
+    static func isRegistered(_ id: UInt) -> Bool { tokens[id] != nil }
+#endif
 }
 
 /// C callback. Runs on the AX worker thread between executor jobs; it hops back onto the
@@ -115,6 +119,9 @@ final class AXObserverHandle {
             if Log.verbose {
                 Log.ax.debug("AXObserverAddNotification(\(notification)) failed: \(error.rawValue)")
             }
+            // `tokenID` was allocated before the AX call. Release it when no successful
+            // registration refers to it, otherwise repeated failures leak registry entries.
+            releaseUnusedTokens()
             return false
         }
     }

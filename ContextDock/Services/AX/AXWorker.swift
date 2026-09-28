@@ -339,15 +339,13 @@ final class AXWorker {
         }
         for id in changes.added {
             windowIndex[id] = session.key
-            if let element = session.tracker.element(for: id) {
-                AXElement.setTimeout(element, seconds: configuration.elementTimeoutSeconds)
-                if let observer = session.observer {
-                    let token = AXObservationToken(process: session.key, window: id, worker: self)
-                    for name in [AXNotificationName.titleChanged, AXNotificationName.elementDestroyed] {
-                        observer.add(name, to: element, token: token)
-                    }
-                }
-            }
+            bindWindowObserver(id, in: &session)
+        }
+        for id in changes.readopted {
+            // Registrations still point at the dead element. Removing them also unregisters the
+            // old token id, so a callback queued by that element cannot remove the replacement.
+            session.observer?.removeRegistrations(for: id)
+            bindWindowObserver(id, in: &session)
         }
         for id in changes.removed {
             forgetWindow(id, in: &session)
@@ -355,6 +353,20 @@ final class AXWorker {
 
         if case .success = input {
             refreshFocusFlags(&session)
+        }
+    }
+
+    private func bindWindowObserver(_ id: WindowSessionID, in session: inout AppSession) {
+        guard let element = session.tracker.element(for: id) else { return }
+        AXElement.setTimeout(element, seconds: configuration.elementTimeoutSeconds)
+        guard let observer = session.observer else { return }
+        let token = AXObservationToken(process: session.key, window: id, worker: self)
+        var registered = true
+        for name in [AXNotificationName.titleChanged, AXNotificationName.elementDestroyed] {
+            registered = observer.add(name, to: element, token: token) && registered
+        }
+        if !registered {
+            DiagnosticLog.write("ax", "\(session.info.applicationName) pid=\(session.key.pid): observer bind incomplete")
         }
     }
 

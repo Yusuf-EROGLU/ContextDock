@@ -31,6 +31,7 @@ final class AppServices {
     private var observers: [NSObjectProtocol] = []
     private var didShowPermissionOnboarding = false
     private var activationCounter: UInt64 = 0
+    private var suspension = DiscoverySuspensionState()
 
     init() {
         store = WindowStore(customizations: customizations, persistence: persistence, apps: apps)
@@ -180,38 +181,38 @@ final class AppServices {
         })
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "system will sleep")
-            Task { @MainActor in self?.suspendDiscovery() }
+            Task { @MainActor in self?.suspendDiscovery(for: .systemSleep) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "system did wake")
-            Task { @MainActor in self?.resumeDiscovery() }
+            Task { @MainActor in self?.resumeDiscovery(from: .systemSleep) }
         })
         // Display sleep and the lock screen make macOS report no windows for any app; pausing
         // discovery keeps cards, names and groups intact until the screen is back.
         observers.append(center.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screens did sleep")
-            Task { @MainActor in self?.suspendDiscovery() }
+            Task { @MainActor in self?.suspendDiscovery(for: .displaySleep) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screens did wake")
-            Task { @MainActor in self?.resumeDiscovery() }
+            Task { @MainActor in self?.resumeDiscovery(from: .displaySleep) }
         })
         let distributed = DistributedNotificationCenter.default()
         observers.append(distributed.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screen locked")
-            Task { @MainActor in self?.suspendDiscovery() }
+            Task { @MainActor in self?.suspendDiscovery(for: .screenLocked) }
         })
         observers.append(distributed.addObserver(forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "screen unlocked")
-            Task { @MainActor in self?.resumeDiscovery() }
+            Task { @MainActor in self?.resumeDiscovery(from: .screenLocked) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "session resigned active")
-            Task { @MainActor in self?.suspendDiscovery() }
+            Task { @MainActor in self?.suspendDiscovery(for: .sessionInactive) }
         })
         observers.append(center.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             DiagnosticLog.write("app", "session became active")
-            Task { @MainActor in self?.resumeDiscovery() }
+            Task { @MainActor in self?.resumeDiscovery(from: .sessionInactive) }
         })
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -249,15 +250,29 @@ final class AppServices {
     }
 
     /// Stops scanning and freezes the memory's grace clock (sleep, display sleep, lock screen).
-    private func suspendDiscovery() {
+    private func suspendDiscovery(for reason: DiscoverySuspensionReason) {
+        guard suspension.suspend(for: reason) else {
+            DiagnosticLog.write("app", "discovery remains suspended: \(activeSuspensionReasons)")
+            return
+        }
         let worker = self.worker
         Task { @AXActor in worker.setMode(.paused) }
         memory.suspend()
+        DiagnosticLog.write("app", "discovery suspended: \(activeSuspensionReasons)")
     }
 
-    private func resumeDiscovery() {
+    private func resumeDiscovery(from reason: DiscoverySuspensionReason) {
+        guard suspension.resume(from: reason) else {
+            DiagnosticLog.write("app", "discovery remains suspended: \(activeSuspensionReasons)")
+            return
+        }
         memory.resume()
         applyWorkerMode()
+        DiagnosticLog.write("app", "discovery resumed")
+    }
+
+    private var activeSuspensionReasons: String {
+        suspension.reasons.map(\.rawValue).sorted().joined(separator: ",")
     }
 
     private func applyWorkerMode() {
