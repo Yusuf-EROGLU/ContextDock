@@ -3,7 +3,7 @@
 // Copy this file into your project's Assets/Editor/ folder. It writes a small JSON heartbeat
 // (project path, PID, process start time) every 5 seconds to
 //   ~/Library/Application Support/ContextDock/Bridge/Unity/<pid>-<startUnixMs>.json
-// so ContextDock can label this Editor window with the correct project and Git branch.
+// so ContextDock can label this Editor window with the correct project name.
 //
 // It never touches scenes, assets or the network, and does nothing outside the macOS Editor.
 // Remove the file (and its .meta) to uninstall.

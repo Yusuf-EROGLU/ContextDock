@@ -7,6 +7,7 @@ window title). This optional zsh snippet lets you name a terminal from the shell
 source /path/to/ContextDock/Integrations/Ghostty/contextdock.zsh   # add to ~/.zshrc yourself
 contextdock_label "Backend"
 contextdock_project "backend"     # optional
+contextdock_branch "main"         # optional, display-only text
 contextdock_clear                 # remove the label
 ```
 
@@ -17,8 +18,9 @@ or unknown-version titles fall back to the plain title.
 
 ContextDock never edits your `.zshrc` or Ghostty configuration; you add the `source` line.
 Uninstall by removing that line. The hook is registered with `add-zsh-hook precmd`, so your
-existing `precmd` functions keep working. It runs no `git` commands on each prompt; use
-*Attach Project Folder…* on the card for branch information.
+existing `precmd` functions keep working. It runs no `git` commands on each prompt; if you
+want a branch on the card, set it yourself with `contextdock_branch` and ContextDock shows it
+as plain text.
 
 ## Compatibility notes
 

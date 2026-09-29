@@ -1,8 +1,8 @@
 # ContextDock Unity Editor bridge (optional)
 
-The bridge lets ContextDock label a Unity Editor window with its **verified project path**
-automatically, so the Git branch appears without attaching the folder by hand. It is
-optional: without it, use *Attach Project Folder…* on the card.
+The bridge lets ContextDock show which **project** a Unity Editor window belongs to, so
+the card reads "music-game-audio" instead of the raw window title. It is optional: without
+it, a Unity card shows the window title, and *Rename…* on the card always works.
 
 ## What it does
 
@@ -56,6 +56,7 @@ Delete `Assets/Editor/ContextDockBridge.cs` and its `.meta`. Optionally remove
 ## Notes
 
 - Domain reloads keep the same `editorSessionId` (stored in `SessionState`).
-- If the bridge reports a project that differs from a folder you attached manually, ContextDock
-  keeps your manual choice and shows a small note in the card tooltip and details.
+- A name you set with *Rename…* always wins over the project name reported by the bridge.
+- The project path in the file is used only to derive the project name; ContextDock never
+  opens, scans or runs anything in that folder.
 - Unity Hub is not an Editor and is never matched.
