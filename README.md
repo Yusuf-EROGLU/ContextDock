@@ -161,3 +161,7 @@ Remove the Unity/Ghostty integration files if you installed them.
 | Names or groups did not come back after relaunch | Re-attaching is best effort (same process and title, then same app and title, then the only window of that app, then app order) within 15 minutes of launch. A window that opened later or whose app has several look-alike windows may not be matched; rename or regroup it once and it is remembered again. |
 
 See `KNOWN_LIMITATIONS.md` and `TEST_REPORT.md` for verified behaviour and open limitations.
+
+## License
+
+MIT. See `LICENSE`.
